@@ -1,0 +1,257 @@
+I want you to rethink the entire UI and UX of this admin screen, while preserving all current business logic and user capabilities.
+
+Context:
+This is a single-case finance workspace inside an admin app. The user is an operator/admin managing the financial lifecycle of one case. The case can have payments, invoices, outgoing invoice emails, reminders, reusable contact memory, and activity history. The current UI works functionally, but it feels too dense, too flat, and not well organized around operator priorities.
+
+Your task:
+Propose a much better UI and UX for this screen without removing any important functionality. You can radically rethink layout, grouping, hierarchy, density, tabs/sections, calls to action, summaries, and progressive disclosure. Keep the underlying logic, but improve clarity, speed, and decision-making.
+
+Please study the attached files and screenshots, then propose:
+1. A better information architecture for the screen
+2. A better visual hierarchy
+3. A clearer layout for desktop first, with mobile considerations
+4. Better grouping of actions vs data vs history vs automation
+5. Better naming/labels where useful
+6. A suggested component structure / section breakdown
+7. Which parts should stay on this page and which should possibly move to secondary drawers/modals/pages
+8. Specific UX improvements to reduce operator confusion and speed up common tasks
+9. A concrete redesign direction, not just generic advice
+
+Important constraint:
+Do not simplify away business logic. Keep all current capabilities, but feel free to reorganize them heavily.
+
+Current screen purpose:
+This screen is the finance command center for one case. It combines:
+- financial summary
+- operational next-step guidance
+- case finance profile editing
+- reusable case contact memory
+- payment logging and payment history
+- invoice creation/editing/deleting
+- sending invoice emails and reminder emails
+- viewing email history
+- finance activity timeline
+- shared automation/email defaults
+
+Current top-level logic shown to the user:
+- The page header shows the case title, case ID, request type, last updated timestamp, current finance status, and a refresh action.
+- The top summary area shows:
+  - Contract amount
+  - Total paid
+  - Outstanding amount
+  - Total invoiced
+- It also shows quick operational context:
+  - Client summary
+  - Service summary
+  - Reminder/email summary
+- It shows a “Recommended next move” card based on business rules.
+- It shows extra signal cards such as:
+  - overdue invoice state
+  - whether reusable client email exists
+  - whether email automation/sender is configured
+- It offers quick actions:
+  - add payment
+  - create new invoice
+  - compose email
+
+Recommended-next-move logic:
+The current recommendation is computed like this:
+- If there are overdue invoices: recommend following up / sending reminder, and point user to Communication
+- If there is remaining balance and no invoices: recommend creating the first invoice, and point user to Invoices
+- If there is remaining balance and no payments: recommend capturing payment progress, and point user to Payments
+- If no reusable client email exists: recommend storing a reusable contact email, and point user to Overview
+- If contract value exists and remaining balance is zero or less: recommend review/settled state, and point user to Activity
+- Otherwise: recommend general review / keeping the record current
+
+Tabs and what each one currently does:
+
+1. Overview
+Purpose:
+- edit core finance profile for the case
+- edit reusable case memory / contact info
+- show static context about the case
+
+User controls:
+- edit client name
+- edit client phone
+- edit service type
+- edit finance date
+- edit contract sum
+- edit currency
+- edit due date
+- edit finance status
+- edit notes
+- save profile
+- reset profile form
+
+Case memory controls:
+- edit primary phone
+- edit reusable custom fields, especially email and stored client fields
+- save case memory
+- reset case memory
+
+Also shows case context such as:
+- case ID
+- request type
+- created date
+- last change
+- first seen
+- outstanding amount
+
+2. Payments
+Purpose:
+- show chronological payment ledger
+- allow payment creation
+- allow payment deletion
+- help the operator understand collection progress
+
+User controls:
+- view list of payments
+- delete payment
+- create payment with:
+  - payment date
+  - amount
+  - currency
+  - internal note
+- reset payment form to defaults
+
+Payment defaults logic:
+- payment draft is seeded from outstanding balance and current/default currency
+
+Also shows:
+- collection snapshot
+- outstanding amount
+- payment count
+- latest payment date
+
+3. Invoices
+Purpose:
+- manage all invoices for the case
+- select one invoice as the active invoice
+- create/edit/delete invoices
+- drive communication defaults from the selected invoice
+
+User controls:
+- view invoice board/list
+- select invoice
+- create new invoice
+- edit selected invoice
+- delete invoice
+- invoice form fields:
+  - invoice number
+  - status
+  - issue date
+  - due date
+  - amount
+  - currency
+  - client name
+  - client email
+  - client address
+  - service description
+  - raw line items / extra structure text
+  - reminders enabled
+  - first reminder after N days
+  - repeat every N days
+  - max reminders
+- save invoice
+- reset draft
+- copy invoice into new draft
+
+Invoice draft logic:
+- a new invoice draft is seeded from case memory, selected invoice if relevant, finance values, and automation defaults
+- the selected invoice becomes the “focus” invoice for email/reminder actions
+
+Invoice-related quick actions:
+- send invoice
+- send reminder
+
+4. Communication
+Purpose:
+- compose and send email tied to the selected invoice
+- support both invoice mail and reminder mail
+- show email history
+- optionally edit shared email automation defaults
+
+User controls:
+- switch between “invoice email” and “reminder”
+- edit recipient email
+- pick from suggested remembered emails
+- edit subject
+- edit body
+- dry run email
+- send live email
+- reset to defaults
+- inspect result of last email action
+- review email history for this case
+
+Communication logic:
+- communication is invoice-driven
+- an invoice must be selected for compose/send flows
+- default subject/body are generated from invoice data and stored templates
+- recipient suggestions come from selected invoice email, reusable case email, and remembered recipients
+- successful sends create remembered recipient history and activity log entries
+
+Automation defaults area:
+- shows whether company/sender setup exists
+- can expand to edit shared settings:
+  - company identity
+  - address / city / tax / bank info
+  - SMTP host / port / username / password / TLS / from email / BCC
+  - default currency
+  - invoice email subject/body templates
+  - reminder email subject/body templates
+
+5. Activity
+Purpose:
+- show a compressed timeline of finance-relevant events
+- surface reusable memory and shortcuts
+- offer fast actions
+
+Shows:
+- payment events
+- invoice creation / sending / status changes
+- email sends / reminders
+- finance record updates
+
+Also shows:
+- remembered recipients
+- stored case email
+- fast actions:
+  - log another payment
+  - start a new invoice draft
+  - open communication
+
+Business intent behind the page:
+This page is not just a record viewer. It is meant to help an operator answer:
+- What is the current money state of this case?
+- What should I do next?
+- Do I have enough contact and billing info?
+- Have I invoiced this work?
+- Has money been collected?
+- Do I need to follow up?
+- What has already happened?
+
+Main UX problems to solve:
+- The page currently mixes summary, editing, operations, history, and automation in one surface
+- Important next actions are not prominent enough
+- Too many equal-weight cards and panels compete for attention
+- Operators may not know whether to start from overview, payments, invoices, or communication
+- Shared automation defaults may be too heavy/noisy inside the case page
+- The page could better separate “case-level data”, “money workflow”, and “system/admin settings”
+
+Please propose a redesigned experience that preserves all of this logic, but substantially improves:
+- clarity
+- speed
+- operator confidence
+- discoverability
+- progressive disclosure
+- action prioritization
+
+I want a strong opinionated redesign, not generic suggestions. Please include:
+- a proposed page structure
+- what the primary action area should be
+- what should be above the fold
+- how to handle tabs/sections better
+- what should become cards vs side panels vs drawers vs secondary settings areas
+- what should be summarized vs editable inline
+- what should be moved out of the main workflow if needed
