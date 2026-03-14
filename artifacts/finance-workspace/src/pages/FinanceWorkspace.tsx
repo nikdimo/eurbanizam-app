@@ -166,7 +166,7 @@ export default function FinanceWorkspace() {
     <AppShell>
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         {/* COMMAND BAR + TAB NAV — both sticky so tabs never go behind the bar */}
-        <div className="sticky top-12 z-10 bg-background shadow-sm">
+        <div className="sticky top-0 z-10 bg-background shadow-sm">
           {/* Info row */}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-6 py-3 border-b">
             <div className="flex items-center gap-2 min-w-0">
