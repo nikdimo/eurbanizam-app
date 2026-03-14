@@ -1,0 +1,19 @@
+[Unit]
+Description=eUrbanizam Web
+After=network.target eurbanizam-api.service
+Requires=eurbanizam-api.service
+
+[Service]
+Type=simple
+User=nikola
+WorkingDirectory=/home/nikola/eurbanizam-app/apps/web
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=HOST=127.0.0.1
+Environment=NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
+ExecStart=/usr/bin/npm run start -- --hostname 127.0.0.1 --port 3000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

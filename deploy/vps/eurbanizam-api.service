@@ -1,0 +1,20 @@
+[Unit]
+Description=eUrbanizam API
+After=network.target
+
+[Service]
+Type=simple
+User=nikola
+WorkingDirectory=/home/nikola/eurbanizam-app
+Environment=API_HOST=127.0.0.1
+Environment=API_PORT=8000
+Environment=API_RELOAD=false
+Environment=DATABASE_PATH=/home/nikola/.eurbanizam/db/eurbanizam_local.sqlite
+Environment=CORS_ALLOW_ORIGINS=http://127.0.0.1:3000
+EnvironmentFile=-/home/nikola/.eurbanizam/secrets/.eurbanizam_secrets.env
+ExecStart=/home/nikola/eurbanizam-app/.venv/bin/python -m uvicorn apps.api.main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

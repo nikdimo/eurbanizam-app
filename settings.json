@@ -1,0 +1,95 @@
+{
+  "project_root": ".",
+  "runtime_root": "/home/nikola/.eurbanizam",
+  "local_db_path": "/home/nikola/.eurbanizam/db/eurbanizam_local.sqlite",
+  "local_json_dir": "/home/nikola/.eurbanizam/json/cases_full_json",
+  "local_logs_dir": "/home/nikola/.eurbanizam/logs",
+  "suitcase_db_path": "data/suitcase/eurbanizam_suitcase.sqlite",
+  "suitcase_json_dir": "data/suitcase/cases_full_json",
+  "schema_validation": {
+    "expected_tables": [
+      "cases",
+      "case_user_data"
+    ]
+  },
+  "visible_columns_v9": [
+    "case_id",
+    "Phone",
+    "Finansii",
+    "Name / Last name",
+    "updated_at",
+    "request_type",
+    "status",
+    "Denovi (Od Posledna)",
+    "title",
+    "created_at",
+    "First Seen"
+  ],
+  "column_order_map": {
+    "case_id": 1,
+    "Phone": 2,
+    "Finansii": 3,
+    "Name / Last name": 4,
+    "updated_at": 5,
+    "request_type": 6,
+    "status": 7,
+    "Denovi (Od Posledna)": 8,
+    "title": 9,
+    "created_at": 10,
+    "prev_change_at": 11,
+    "First Seen": 12
+  },
+  "custom_field_defs": [
+    {
+      "name": "Finansii",
+      "type": "Dropdown",
+      "options": [
+        "No payment",
+        "Down payment",
+        "Paid",
+        "Pending"
+      ],
+      "enabled": true,
+      "scope": "case"
+    },
+    {
+      "name": "Name / Last name",
+      "type": "Text",
+      "options": [],
+      "enabled": true,
+      "scope": "case"
+    }
+  ],
+  "default_request_type_exclude": [
+    "???"
+  ],
+  "default_sort_column": "updated_at",
+  "default_sort_desc": true,
+  "last_request_type_selection": [],
+  "last_status_selection": [],
+  "force_exclude_request_types": true,
+  "last_date_range": {
+    "preset": "All Time",
+    "start": null,
+    "end": null
+  },
+  "last_search_text": "",
+  "finance_visible_columns_v1": [
+    "case_id",
+    "Phone",
+    "Finansii",
+    "Name / Last name",
+    "finance_contract_sum",
+    "finance_currency",
+    "finance_paid_total",
+    "finance_remaining",
+    "finance_overdue_amount",
+    "finance_due_date",
+    "finance_status",
+    "finance_last_payment_date",
+    "finance_payments_count",
+    "finance_service_type",
+    "finance_notes",
+    "finance_unallocated_cash"
+  ]
+}

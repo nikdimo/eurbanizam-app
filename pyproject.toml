@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel>=0.40"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eurbanizam-tracker"
+version = "0.1.0"
+description = "eUrbanizam admin API and tools"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.115,<1",
+    "pydantic>=2,<3",
+    "uvicorn[standard]>=0.34,<1",
+]
+
+[project.scripts]
+eurbanizam-api = "apps.api.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["apps*"]
