@@ -28,6 +28,12 @@ def load_app_settings() -> dict:
     project_root = PROJECT_ROOT
     resolved = {
         "project_root": str(project_root),
+        "runtime_root": str(
+            _expand_path(
+                raw.get("runtime_root", "%USERPROFILE%\\.eurbanizam"),
+                project_root,
+            )
+        ),
         "local_db_path": str(_expand_path(raw["local_db_path"], project_root)),
         "local_json_dir": str(_expand_path(raw["local_json_dir"], project_root)),
         "local_logs_dir": str(_expand_path(raw["local_logs_dir"], project_root)),

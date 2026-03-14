@@ -1,0 +1,9 @@
+[Unit]
+Description=Eurbanizam periodic healthcheck
+After=network.target
+
+[Service]
+Type=oneshot
+User=nikola
+WorkingDirectory=/home/nikola/eurbanizam-tracker
+ExecStart=/home/nikola/eurbanizam-tracker/.venv/bin/python tools/system_healthcheck.py --stale-hours 36 --remind-hours 12

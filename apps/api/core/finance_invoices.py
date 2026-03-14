@@ -441,6 +441,15 @@ def get_invoice_record(conn: sqlite3.Connection, invoice_id: int) -> Optional[di
     return _invoice_row_to_dict(row)
 
 
+def generate_invoice_html(conn: sqlite3.Connection, invoice_id: int) -> Optional[str]:
+    """Build invoice HTML for the given invoice. Returns HTML string or None."""
+    invoice = get_invoice_record(conn, invoice_id)
+    if invoice is None:
+        return None
+    company = get_company_settings()
+    return build_invoice_html(company, invoice)
+
+
 def generate_invoice_pdf(
     conn: sqlite3.Connection, invoice_id: int
 ) -> tuple[Optional[bytes], Optional[str]]:

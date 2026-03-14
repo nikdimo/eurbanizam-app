@@ -1,0 +1,13 @@
+[Unit]
+Description=eUrbanizam Daily Smart Sync and Report
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=niki
+WorkingDirectory=/home/niki/eurbanizam-app
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/niki/eurbanizam-app/.venv/bin/python /home/niki/eurbanizam-app/tools/smart_sync.py --headless true
+ExecStart=/home/niki/eurbanizam-app/.venv/bin/python /home/niki/eurbanizam-app/tools/daily_report.py --hours 24
+

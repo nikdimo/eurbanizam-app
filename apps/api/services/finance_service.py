@@ -220,6 +220,10 @@ class FinanceService:
         with db_session(self.db_path) as conn:
             return finance_invoices.send_invoice_reminder(conn, invoice_id, _dump_payload(payload))
 
+    def get_invoice_html(self, invoice_id: int) -> Optional[str]:
+        with db_session(self.db_path) as conn:
+            return finance_invoices.generate_invoice_html(conn, invoice_id)
+
     def get_invoice_pdf(self, invoice_id: int) -> Optional[tuple[bytes, str]]:
         with db_session(self.db_path) as conn:
             pdf_bytes, filename = finance_invoices.generate_invoice_pdf(conn, invoice_id)

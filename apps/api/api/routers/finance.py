@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import Response
+from fastapi.responses import HTMLResponse, Response
 
 from ...core.dependencies import get_finance_service
 from ...schemas.finance import (
@@ -147,6 +147,21 @@ def delete_invoice(invoice_id: int, service=Depends(get_finance_service)):
     if not ok:
         raise HTTPException(status_code=404, detail="Invoice not found")
     return {"ok": True}
+
+
+@router.get(
+    "/finance/invoices/{invoice_id}/html",
+    response_class=HTMLResponse,
+    responses={404: {"description": "Invoice not found"}},
+)
+def get_invoice_html(
+    invoice_id: int,
+    service=Depends(get_finance_service),
+):
+    html_content = service.get_invoice_html(invoice_id=invoice_id)
+    if html_content is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    return HTMLResponse(content=html_content)
 
 
 @router.get("/finance/invoices/{invoice_id}/pdf")

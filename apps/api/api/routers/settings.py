@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from ...core.dependencies import get_custom_fields_service
+from ...core.dependencies import get_custom_fields_service, get_management_service
 from ...core.settings_access import (
     load_app_settings,
     load_finance_settings,
@@ -18,6 +18,12 @@ from ...schemas.cases import (
     CaseCustomFieldUpdatePayload,
 )
 from ...schemas.finance import FinanceSettingsPayload
+from ...schemas.settings import (
+    JobActionPayload,
+    JobActionResult,
+    ProjectManagementState,
+    ProjectManagementUpdatePayload,
+)
 
 
 router = APIRouter(tags=["settings"])
@@ -44,6 +50,31 @@ def get_finance_settings():
 def update_finance_settings(payload: FinanceSettingsPayload):
     updates = payload.model_dump(exclude_none=True)
     return save_finance_settings_keys(updates)
+
+
+@router.get("/settings/management", response_model=ProjectManagementState)
+def get_management_state(service=Depends(get_management_service)):
+    return service.get_management_state()
+
+
+@router.patch("/settings/management", response_model=ProjectManagementState)
+def update_management_settings(
+    payload: ProjectManagementUpdatePayload,
+    service=Depends(get_management_service),
+):
+    return service.update_project_settings(payload)
+
+
+@router.post("/settings/management/jobs/{job_name}", response_model=JobActionResult)
+def run_management_job(
+    job_name: str,
+    payload: JobActionPayload,
+    service=Depends(get_management_service),
+):
+    try:
+        return service.run_job_action(job_name, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.patch("/settings/filters")

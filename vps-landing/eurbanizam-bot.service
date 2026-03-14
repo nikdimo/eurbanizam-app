@@ -1,0 +1,16 @@
+[Unit]
+Description=eUrbanizam Telegram Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=niki
+WorkingDirectory=/home/niki/eurbanizam-app
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/niki/eurbanizam-app/.venv/bin/python /home/niki/eurbanizam-app/tools/telegram_bot_server.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

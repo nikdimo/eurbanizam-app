@@ -37,8 +37,16 @@ import {
 } from "@/components/ui/select";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
 import { StatusBadge } from "@/components/ui/status-badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { apiClient } from "@/lib/api/client";
+import { apiClient, API_BASE } from "@/lib/api/client";
 import {
   FinanceCaseDetail,
   FinanceCaseDetailSchema,
@@ -2556,7 +2564,7 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                     <TableHead>Due</TableHead>
                     <TableHead>Amount</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead className="w-[1%] whitespace-nowrap">PDF</TableHead>
+                    <TableHead className="min-w-[80px] whitespace-nowrap">View</TableHead>
                     <TableHead className="w-[1%] whitespace-nowrap" />
                   </TableRow>
                 </TableHeader>
@@ -2606,17 +2614,17 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                             size="sm"
                             variant="outline"
                             asChild
-                            title="View or download PDF"
+                            title="View invoice (print from browser)"
                             className="gap-1.5"
                           >
                             <a
-                              href={`${API_BASE.replace(/\/$/, "")}/api/finance/invoices/${invoice.invoice_id}/pdf`}
+                              href={`${API_BASE.replace(/\/$/, "")}/api/finance/invoices/${invoice.invoice_id}/html`}
                               target="_blank"
                               rel="noopener noreferrer"
                               onClick={(event) => event.stopPropagation()}
                             >
                               <FileTextIcon className="size-4 shrink-0" />
-                              PDF
+                              View
                             </a>
                           </Button>
                         </TableCell>
@@ -3827,15 +3835,144 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
       </div>
 
       {activeTab === "workbench" ? (
-        <div
-          className="grid gap-5 px-6 pb-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(520px,1fr)]"
-          data-timeline-count={timeline.length}
-        >
-          <div className="space-y-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-500">
-                All activity
-              </p>
+        <div className="space-y-5 px-6 pb-5">
+          <SectionCard
+            title="Invoice board"
+            description="Select an invoice to edit, or open it. Use View to see the invoice in your browser and print it as-is."
+            action={
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => prepareNewInvoice(selectedInvoice)}
+                >
+                  <FileTextIcon className="size-4" />
+                  New invoice
+                </Button>
+                {selectedInvoice ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => prepareExistingInvoice(selectedInvoice)}
+                  >
+                    <RefreshCwIcon className="size-4" />
+                    Edit selected
+                  </Button>
+                ) : null}
+              </div>
+            }
+          >
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Invoice</TableHead>
+                  <TableHead>Due</TableHead>
+                  <TableHead>Amount</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="min-w-[80px] whitespace-nowrap">View</TableHead>
+                  <TableHead className="w-[1%] whitespace-nowrap" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.invoices.length ? (
+                  data.invoices.map((invoice) => (
+                    <TableRow
+                      key={invoice.invoice_id}
+                      data-state={
+                        selectedInvoiceId === invoice.invoice_id
+                          ? "selected"
+                          : undefined
+                      }
+                      className="cursor-pointer"
+                      onClick={() => {
+                        setSelectedInvoiceId(invoice.invoice_id);
+                        setEditingInvoiceId(invoice.invoice_id);
+                        setInvoiceDraft(buildExistingInvoiceDraft(invoice));
+                      }}
+                    >
+                      <TableCell>
+                        <div className="space-y-1">
+                          <p className="font-medium">
+                            {invoice.invoice_number || `#${invoice.invoice_id}`}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Issued {formatDate(invoice.issue_date)}
+                          </p>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-1">
+                          <p>{formatDate(invoice.due_date)}</p>
+                          {isInvoiceOverdue(invoice) ? (
+                            <p className="text-xs text-red-600">Overdue</p>
+                          ) : null}
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {formatMoney(invoice.amount, invoice.currency)}
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge status={invoice.status} />
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          asChild
+                          title="View invoice (print from browser)"
+                          className="gap-1.5"
+                        >
+                          <a
+                            href={`${API_BASE.replace(/\/$/, "")}/api/finance/invoices/${invoice.invoice_id}/html`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+onClick={(event) => event.stopPropagation()}
+                            >
+                              <FileTextIcon className="size-4 shrink-0" />
+                              View
+                            </a>
+                        </Button>
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleInvoiceDelete(invoice);
+                          }}
+                          disabled={
+                            busyAction === `delete-invoice-${invoice.invoice_id}`
+                          }
+                        >
+                          <Trash2Icon className="size-4 text-red-600" />
+                          <span className="sr-only">Delete invoice</span>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell
+                      colSpan={6}
+                      className="py-6 text-center text-sm text-muted-foreground"
+                    >
+                      No invoices recorded yet.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </SectionCard>
+
+          <div
+            className="grid gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(520px,1fr)]"
+            data-timeline-count={timeline.length}
+          >
+            <div className="space-y-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-500">
+                  All activity
+                </p>
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
@@ -3950,6 +4087,25 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                                 }}
                               >
                                 Take action
+                              </Button>
+                            ) : null}
+                            {row.kind === "invoice" && row.invoiceId != null ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                asChild
+                                title="View invoice (print from browser)"
+                                className="gap-1.5"
+                              >
+                                <a
+                                  href={`${API_BASE.replace(/\/$/, "")}/api/finance/invoices/${row.invoiceId}/html`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <FileTextIcon className="size-4 shrink-0" />
+                                  View
+                                </a>
                               </Button>
                             ) : null}
                             {row.kind === "payment" && row.paymentId != null ? (
@@ -4445,6 +4601,7 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                 </form>
               )}
             </SectionCard>
+          </div>
           </div>
         </div>
       ) : null}

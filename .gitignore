@@ -1,20 +1,26 @@
-.venv/
-venv/
-__pycache__/
-*.pyc
-*.pyo
-*.log
-*.tmp
-*.db
-*.sqlite
+﻿# Runtime data
 .eurbanizam/
 
-apps/web/node_modules/
-apps/web/.next/
-apps/web/.env.local
-apps/web/tsconfig.tsbuildinfo
+# Backups
+bak/
 
+# Python cache
+__pycache__/
+*.pyc
+
+# Logs and temp
+*.log
+*.tmp
+*.jsonl
+
+# Local DBs
+*.sqlite
+*.db
+
+# OS / editor
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
+settings.json
+settings.local.json

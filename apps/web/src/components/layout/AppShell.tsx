@@ -16,6 +16,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   const isCases = pathname.startsWith("/cases");
+  const isFinance = pathname.startsWith("/finance");
   const isFinanceCaseDetail = pathname.startsWith("/finance/cases/");
 
   return (
@@ -62,7 +63,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             "mx-auto flex h-full min-w-0 flex-col gap-4 px-4 py-6",
             isFinanceCaseDetail
               ? "w-full max-w-none px-0 py-0"
-              : isCases
+              : isCases || isFinance
                 ? "w-full max-w-none"
                 : "max-w-6xl",
           )}

@@ -6,7 +6,7 @@ import { ColumnDef } from "@tanstack/react-table";
 import { ChevronDown, Search } from "lucide-react";
 
 import { apiClient } from "@/lib/api/client";
-import { PageContainer, PageHeader } from "@/components/layout/PagePrimitives";
+import { PageContainer } from "@/components/layout/PagePrimitives";
 import { ColumnSettingsGroup, DataTable } from "@/components/ui/datagrid";
 import { StatCard } from "@/components/ui/stat-card";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -1402,11 +1402,6 @@ export default function FinanceDashboardPage() {
 
   return (
     <>
-      <PageHeader
-        title="Finance"
-        description="Case context plus finance tracking in one working table."
-      />
-
       <PageContainer className="gap-5">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           <StatCard

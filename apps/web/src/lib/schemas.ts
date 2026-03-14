@@ -203,3 +203,139 @@ export const FinanceSettingsSchema = z.object({
 });
 
 export type FinanceSettings = z.infer<typeof FinanceSettingsSchema>;
+
+export const ProjectManagementConfigSchema = z.object({
+  finance_pin: z.string().nullable().optional(),
+  bot_service_name: z.string().nullable().optional(),
+  automation_timezone: z.string().default("Europe/Copenhagen"),
+  smart_sync_schedule_enabled: z.boolean().default(false),
+  smart_sync_time: z.string().default("04:00"),
+  full_scrape_schedule_enabled: z.boolean().default(false),
+  full_scrape_time: z.string().default("03:00"),
+  full_scrape_day_of_week: z.number().default(0),
+  daily_report_schedule_enabled: z.boolean().default(false),
+  daily_report_time: z.string().default("04:15"),
+  daily_report_hours: z.number().default(24),
+  healthcheck_schedule_enabled: z.boolean().default(false),
+  healthcheck_interval_minutes: z.number().default(15),
+  healthcheck_stale_hours: z.number().default(36),
+  healthcheck_remind_hours: z.number().default(12),
+  smart_sync_test_pages: z.number().default(2),
+  full_scrape_test_pages: z.number().default(2),
+  headless_mode: z.boolean().nullable().optional(),
+});
+
+export type ProjectManagementConfig = z.infer<
+  typeof ProjectManagementConfigSchema
+>;
+
+export const RuntimeStatusSchema = z.object({
+  os_name: z.string(),
+  platform: z.string(),
+  python_executable: z.string(),
+  project_root: z.string(),
+  runtime_root: z.string().nullable().optional(),
+  db_path: z.string().nullable().optional(),
+  json_dir: z.string().nullable().optional(),
+  logs_dir: z.string().nullable().optional(),
+  db_exists: z.boolean().default(false),
+  json_dir_exists: z.boolean().default(false),
+  logs_dir_exists: z.boolean().default(false),
+  secrets_file_exists: z.boolean().default(false),
+  storage_state_exists: z.boolean().default(false),
+  wkhtmltopdf_available: z.boolean().default(false),
+  cron_available: z.boolean().default(false),
+  systemctl_available: z.boolean().default(false),
+  node_available: z.boolean().default(false),
+  npm_available: z.boolean().default(false),
+  portal_credentials_configured: z.boolean().default(false),
+  email_credentials_configured: z.boolean().default(false),
+  telegram_credentials_configured: z.boolean().default(false),
+});
+
+export type RuntimeStatus = z.infer<typeof RuntimeStatusSchema>;
+
+export const RuntimeMetricsSchema = z.object({
+  case_count: z.number().default(0),
+  document_count: z.number().default(0),
+  invoice_count: z.number().default(0),
+  payment_count: z.number().default(0),
+  email_log_count: z.number().default(0),
+  json_file_count: z.number().default(0),
+});
+
+export type RuntimeMetrics = z.infer<typeof RuntimeMetricsSchema>;
+
+export const HealthStatusSchema = z.object({
+  status: z.string().nullable().optional(),
+  updated_at: z.string().nullable().optional(),
+  last_email_subject_state: z.string().nullable().optional(),
+  last_email_ok: z.boolean().nullable().optional(),
+  last_email_msg: z.string().nullable().optional(),
+});
+
+export type HealthStatus = z.infer<typeof HealthStatusSchema>;
+
+export const SchedulerEntrySchema = z.object({
+  job: z.string(),
+  enabled: z.boolean().default(false),
+  schedule: z.string(),
+  command_preview: z.string(),
+});
+
+export type SchedulerEntry = z.infer<typeof SchedulerEntrySchema>;
+
+export const SchedulerStatusSchema = z.object({
+  driver: z.string().default("manual"),
+  available: z.boolean().default(false),
+  applied: z.boolean().default(false),
+  timezone: z.string().nullable().optional(),
+  entries: z.array(SchedulerEntrySchema).default([]),
+});
+
+export type SchedulerStatus = z.infer<typeof SchedulerStatusSchema>;
+
+export const JobRunSummarySchema = z.object({
+  job: z.string(),
+  started_at: z.string().nullable().optional(),
+  finished_at: z.string().nullable().optional(),
+  status: z.string().default("unknown"),
+});
+
+export type JobRunSummary = z.infer<typeof JobRunSummarySchema>;
+
+export const ManagedProcessStatusSchema = z.object({
+  job: z.string(),
+  label: z.string(),
+  running: z.boolean().default(false),
+  pid: z.number().nullable().optional(),
+  started_at: z.string().nullable().optional(),
+  command: z.string().nullable().optional(),
+});
+
+export type ManagedProcessStatus = z.infer<typeof ManagedProcessStatusSchema>;
+
+export const ProjectManagementStateSchema = z.object({
+  config: ProjectManagementConfigSchema,
+  runtime: RuntimeStatusSchema,
+  metrics: RuntimeMetricsSchema,
+  health: HealthStatusSchema,
+  scheduler: SchedulerStatusSchema,
+  runs: z.array(JobRunSummarySchema).default([]),
+  processes: z.array(ManagedProcessStatusSchema).default([]),
+});
+
+export type ProjectManagementState = z.infer<
+  typeof ProjectManagementStateSchema
+>;
+
+export const JobActionResultSchema = z.object({
+  job: z.string(),
+  action: z.string(),
+  accepted: z.boolean(),
+  message: z.string(),
+  pid: z.number().nullable().optional(),
+  log_path: z.string().nullable().optional(),
+});
+
+export type JobActionResult = z.infer<typeof JobActionResultSchema>;

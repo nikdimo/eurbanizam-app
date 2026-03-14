@@ -57,16 +57,37 @@ export type ColumnSettingsGroup = {
   columnIds: string[];
 };
 
+const TABLE_LAYOUT_VERSION = 2;
+const LAYOUT_KEYS = [
+  "columns",
+  "columnOrder",
+  "columnWidths",
+  "density",
+] as const;
+
+function ensureLayoutVersion(id: string): boolean {
+  if (typeof window === "undefined") return true;
+  const versionKey = `table:${id}:layoutVersion`;
+  const current = window.localStorage.getItem(versionKey);
+  if (current === String(TABLE_LAYOUT_VERSION)) return true;
+  LAYOUT_KEYS.forEach((suffix) =>
+    window.localStorage.removeItem(`table:${id}:${suffix}`),
+  );
+  window.localStorage.setItem(versionKey, String(TABLE_LAYOUT_VERSION));
+  return false;
+}
+
 function getWidthClass(option: ColumnWidthOption): string {
   switch (option) {
     case "narrow":
-      return "w-[6%] max-w-[8rem]";
+      return "w-[80px] min-w-[80px]";
     case "medium":
-      return "w-[12%] max-w-[14rem]";
+      return "w-[140px] min-w-[140px]";
     case "wide":
-      return "w-[28%] max-w-[32rem]";
+      return "w-[220px] min-w-[220px]";
     default:
-      return "";
+      // Auto: at least fit header/cell content so columns don't overlap
+      return "min-w-max";
   }
 }
 
@@ -145,6 +166,8 @@ function buildColumnSections<TData>(
 
 function ColumnSettingsPanel<TData>({
   table,
+  tableId,
+  columnVisibility,
   columnGroups,
   columnOrder,
   columnWidths,
@@ -152,6 +175,8 @@ function ColumnSettingsPanel<TData>({
   setColumnOrder,
 }: {
   table: TableInstance<TData>;
+  tableId?: string;
+  columnVisibility: VisibilityState;
   columnGroups?: ColumnSettingsGroup[];
   columnOrder: string[];
   columnWidths: Record<string, ColumnWidthOption>;
@@ -166,6 +191,16 @@ function ColumnSettingsPanel<TData>({
     sectionId: string;
     index: number;
   } | null>(null);
+  // Optimistic visibility so checkbox updates instantly; synced from props when they change
+  const [optimisticVisibility, setOptimisticVisibility] =
+    React.useState<VisibilityState | null>(null);
+
+  React.useEffect(() => {
+    setOptimisticVisibility(null);
+  }, [columnVisibility]);
+
+  const effectiveVisibility = optimisticVisibility ?? columnVisibility;
+  const isVisible = (columnId: string) => effectiveVisibility[columnId] !== false;
 
   const allColumns = table.getAllLeafColumns();
   const orderedColumns = React.useMemo(
@@ -178,6 +213,15 @@ function ColumnSettingsPanel<TData>({
   );
 
   const resetLayout = React.useCallback(() => {
+    if (tableId && typeof window !== "undefined") {
+      LAYOUT_KEYS.forEach((suffix) =>
+        window.localStorage.removeItem(`table:${tableId}:${suffix}`),
+      );
+      window.localStorage.setItem(
+        `table:${tableId}:layoutVersion`,
+        String(TABLE_LAYOUT_VERSION),
+      );
+    }
     setColumnOrder(allColumns.map((column) => column.id));
     setColumnWidths({});
     allColumns.forEach((column) => {
@@ -185,7 +229,7 @@ function ColumnSettingsPanel<TData>({
         column.toggleVisibility(true);
       }
     });
-  }, [allColumns, setColumnOrder, setColumnWidths]);
+  }, [allColumns, setColumnOrder, setColumnWidths, tableId]);
 
   const setAllVisible = React.useCallback(
     (visible: boolean) => {
@@ -280,20 +324,12 @@ function ColumnSettingsPanel<TData>({
   );
 
   return (
-    <div className="flex h-full flex-col bg-gradient-to-b from-background via-background to-muted/20">
-      <DialogHeader className="border-b border-border/60 px-6 py-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="space-y-1">
-            <DialogTitle className="text-base font-semibold">
-              Column Layout
-            </DialogTitle>
-            <p className="max-w-2xl text-sm text-muted-foreground">
-              Control visibility, order, and width. Finance layout is split
-              into case context and finance workflow columns, matching the old
-              admin flow but with faster controls.
-            </p>
-          </div>
-
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gradient-to-b from-background via-background to-muted/20">
+      <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <DialogTitle className="text-base font-semibold">
+            Column Layout
+          </DialogTitle>
           <div className="flex flex-wrap items-center gap-2">
             <Button
               type="button"
@@ -323,11 +359,11 @@ function ColumnSettingsPanel<TData>({
         </div>
       </DialogHeader>
 
-      <div className="border-b border-border/50 bg-muted/30 px-6 py-3">
+      <div className="shrink-0 border-b border-border/50 bg-muted/30 px-6 py-2">
         <div className="flex flex-wrap gap-2">
           {sections.map((section) => {
             const visibleCount = section.columns.filter((column) =>
-              column.getIsVisible(),
+              isVisible(column.id),
             ).length;
             return (
               <div
@@ -344,41 +380,33 @@ function ColumnSettingsPanel<TData>({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 py-5">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-6 py-4">
         <div
           className={cn(
-            "grid gap-4",
-            sections.length > 1 ? "xl:grid-cols-2" : "grid-cols-1",
+            "grid min-h-0 flex-1 gap-6",
+            sections.length > 1 ? "grid-cols-2" : "grid-cols-1",
           )}
         >
           {sections.map((section) => {
             const visibleCount = section.columns.filter((column) =>
-              column.getIsVisible(),
+              isVisible(column.id),
             ).length;
 
             return (
               <section
                 key={section.id}
-                className="rounded-3xl border border-border/60 bg-background/90 p-4 shadow-sm"
+                className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-background/90 shadow-sm"
               >
-                <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/50 pb-4">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-semibold text-foreground">
-                        {section.title}
-                      </h3>
-                      <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                        {visibleCount}/{section.columns.length}
-                      </span>
-                    </div>
-                    {section.description ? (
-                      <p className="max-w-md text-xs text-muted-foreground">
-                        {section.description}
-                      </p>
-                    ) : null}
+                <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border/50 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-foreground">
+                      {section.title}
+                    </h3>
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                      {visibleCount}/{section.columns.length}
+                    </span>
                   </div>
-
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex gap-2">
                     <Button
                       type="button"
                       size="xs"
@@ -398,17 +426,13 @@ function ColumnSettingsPanel<TData>({
                   </div>
                 </div>
 
-                <div className="mt-4 space-y-2">
+                <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 py-3 overscroll-contain">
                   {section.columns.length ? (
-                    <>
-                      <p className="text-[11px] text-muted-foreground">
-                        Drag inside this section to reorder. Width applies in
-                        the table immediately.
-                      </p>
+                    <div className="space-y-2 pr-1">
                       {section.columns.map((column, index) => {
                         const widthOpt = columnWidths[column.id] ?? "auto";
                         const canHide = column.getCanHide();
-                        const visible = column.getIsVisible();
+                        const visible = isVisible(column.id);
                         const isDragging =
                           draggedColumn?.columnId === column.id;
                         const showDropLine =
@@ -465,9 +489,13 @@ function ColumnSettingsPanel<TData>({
                                       type="checkbox"
                                       className="h-3.5 w-3.5 rounded border-border text-primary"
                                       checked={visible}
-                                      onChange={() =>
-                                        column.toggleVisibility(!visible)
-                                      }
+                                      onChange={() => {
+                                        setOptimisticVisibility((prev) => ({
+                                          ...(prev ?? columnVisibility),
+                                          [column.id]: !visible,
+                                        }));
+                                        column.toggleVisibility(!visible);
+                                      }}
                                     />
                                     <span className="text-sm text-foreground">
                                       {getColumnLabel(column)}
@@ -534,7 +562,7 @@ function ColumnSettingsPanel<TData>({
                           Move to end of section
                         </div>
                       ) : null}
-                    </>
+                    </div>
                   ) : (
                     <div className="rounded-2xl border border-dashed border-border/60 bg-muted/10 px-4 py-6 text-sm text-muted-foreground">
                       No columns in this section.
@@ -572,10 +600,8 @@ export function DataTable<TData>({
   });
   const [columnVisibility, setColumnVisibility] =
     React.useState<VisibilityState>(() => {
-      if (!id || typeof window === "undefined") {
-        return {};
-      }
-
+      if (!id || typeof window === "undefined") return {};
+      if (!ensureLayoutVersion(id)) return {};
       try {
         const stored = window.localStorage.getItem(`table:${id}:columns`);
         return stored ? (JSON.parse(stored) as VisibilityState) : {};
@@ -584,10 +610,8 @@ export function DataTable<TData>({
       }
     });
   const [columnOrder, setColumnOrder] = React.useState<string[]>(() => {
-    if (!id || typeof window === "undefined") {
-      return [];
-    }
-
+    if (!id || typeof window === "undefined") return [];
+    if (!ensureLayoutVersion(id)) return [];
     try {
       const stored = window.localStorage.getItem(`table:${id}:columnOrder`);
       return stored ? (JSON.parse(stored) as string[]) : [];
@@ -598,10 +622,8 @@ export function DataTable<TData>({
   const [columnWidths, setColumnWidths] = React.useState<
     Record<string, ColumnWidthOption>
   >(() => {
-    if (!id || typeof window === "undefined") {
-      return {};
-    }
-
+    if (!id || typeof window === "undefined") return {};
+    if (!ensureLayoutVersion(id)) return {};
     try {
       const stored = window.localStorage.getItem(`table:${id}:columnWidths`);
       return stored
@@ -612,9 +634,8 @@ export function DataTable<TData>({
     }
   });
   const [density, setDensity] = React.useState<Density>(() => {
-    if (!id || typeof window === "undefined") {
-      return "comfortable";
-    }
+    if (!id || typeof window === "undefined") return "comfortable";
+    if (!ensureLayoutVersion(id)) return "comfortable";
     const stored = window.localStorage.getItem(
       `table:${id}:density`,
     ) as Density | null;
@@ -781,12 +802,15 @@ export function DataTable<TData>({
             </DialogTrigger>
             <DialogContent
               className={cn(
-                "max-h-[85vh] overflow-hidden p-0 text-xs",
-                columnGroups?.length ? "max-w-5xl" : "max-w-3xl",
+                "flex h-[90vh] max-h-[90vh] min-w-[88vw] w-[88vw] flex-col overflow-hidden p-0 text-xs",
+                "!max-w-[85rem]",
+                columnGroups?.length ? "sm:min-w-[70rem]" : "sm:min-w-[40rem]",
               )}
             >
               <ColumnSettingsPanel
                 table={table}
+                tableId={id}
+                columnVisibility={columnVisibility}
                 columnGroups={columnGroups}
                 columnOrder={columnOrder}
                 columnWidths={columnWidths}
@@ -872,7 +896,7 @@ export function DataTable<TData>({
           tabIndex={0}
           onKeyDown={handleKeyDown}
         >
-          <Table className="w-full table-auto">
+          <Table className="w-full min-w-max table-auto">
             <TableHeader className="bg-muted/60">
               {table.getHeaderGroups().map((headerGroup) => (
                 <TableRow key={headerGroup.id}>
@@ -950,6 +974,7 @@ export function DataTable<TData>({
                   >
                     {row.getVisibleCells().map((cell) => {
                       const cellWidthOpt = columnWidths[cell.column.id] ?? "auto";
+                      const widthClass = getWidthClass(cellWidthOpt);
                       const shouldTruncate = cellWidthOpt !== "auto";
 
                       return (
@@ -957,6 +982,7 @@ export function DataTable<TData>({
                           key={cell.id}
                           className={cn(
                             "min-w-0 px-3",
+                            widthClass,
                             density === "compact" ? "py-1.5" : "py-2.5",
                           )}
                         >
