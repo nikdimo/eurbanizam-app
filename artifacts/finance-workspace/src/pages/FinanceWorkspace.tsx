@@ -164,54 +164,33 @@ export default function FinanceWorkspace() {
 
   return (
     <AppShell>
-      {/* COMMAND BAR — tight, directly below header */}
-      <div className="sticky top-12 z-10 border-b bg-background shadow-sm">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-6 py-3">
-          <div className="flex items-center gap-2 min-w-0">
-            <h1 className="text-base font-semibold tracking-tight truncate">{data.title}</h1>
-            <Badge variant="outline" className="font-mono text-xs shrink-0">{data.case_id}</Badge>
-            <Badge variant="secondary" className="text-xs shrink-0 hidden sm:inline-flex">{data.request_type}</Badge>
-            <StatusBadge status={data.finance_status as StatusVariant} className="shrink-0" />
-          </div>
-
-          <div className="flex items-center gap-4 ml-auto rounded-lg border bg-card px-4 py-1.5 shadow-xs">
-            <StatPill label="Contract" value={formatMoney(data.contract_sum, data.currency)} />
-            <Separator orientation="vertical" className="h-7" />
-            <StatPill label="Invoiced" value={formatMoney(invoicedTotal, data.currency)} />
-            <Separator orientation="vertical" className="h-7" />
-            <StatPill label="Paid" value={<span className="text-emerald-600">{formatMoney(paidTotal, data.currency)}</span>} />
-            <Separator orientation="vertical" className="h-7" />
-            <StatPill label="Outstanding" value={<span className={outstanding > 0 ? "text-amber-600" : "text-emerald-600"}>{formatMoney(outstanding, data.currency)}</span>} />
-            <Separator orientation="vertical" className="h-7" />
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
-              <RefreshCw className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        </div>
-
-        {/* ACTION BANNER — inside command bar so it's never hidden */}
-        {recommendation && (
-          <div className={`mx-6 mb-3 flex items-center justify-between rounded-lg border px-4 py-2.5 text-sm ${
-            recommendation.tone === "warning" ? "border-amber-200 bg-amber-50 text-amber-900" :
-            recommendation.tone === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-900" :
-            "border-blue-200 bg-blue-50 text-blue-900"
-          }`}>
-            <div className="flex items-center gap-2">
-              <recommendation.icon className={`h-4 w-4 shrink-0 ${recommendation.tone === "warning" ? "text-amber-600" : recommendation.tone === "success" ? "text-emerald-600" : "text-blue-600"}`} />
-              <span className="font-medium">{recommendation.title}</span>
-              <span className="text-xs opacity-75 hidden sm:inline">— {recommendation.description}</span>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        {/* COMMAND BAR + TAB NAV — both sticky so tabs never go behind the bar */}
+        <div className="sticky top-12 z-10 bg-background shadow-sm">
+          {/* Info row */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-6 py-3 border-b">
+            <div className="flex items-center gap-2 min-w-0">
+              <h1 className="text-base font-semibold tracking-tight truncate">{data.title}</h1>
+              <Badge variant="outline" className="font-mono text-xs shrink-0">{data.case_id}</Badge>
+              <Badge variant="secondary" className="text-xs shrink-0 hidden sm:inline-flex">{data.request_type}</Badge>
+              <StatusBadge status={data.finance_status as StatusVariant} className="shrink-0" />
             </div>
-            <Button size="sm" variant="outline" onClick={() => setActiveTab(recommendation.tab)} className="h-7 shrink-0 bg-white/60 hover:bg-white text-xs">
-              Take action <ArrowRight className="ml-1.5 h-3 w-3" />
-            </Button>
+            <div className="flex items-center gap-4 ml-auto rounded-lg border bg-card px-4 py-1.5 shadow-xs">
+              <StatPill label="Contract" value={formatMoney(data.contract_sum, data.currency)} />
+              <Separator orientation="vertical" className="h-7" />
+              <StatPill label="Invoiced" value={formatMoney(invoicedTotal, data.currency)} />
+              <Separator orientation="vertical" className="h-7" />
+              <StatPill label="Paid" value={<span className="text-emerald-600">{formatMoney(paidTotal, data.currency)}</span>} />
+              <Separator orientation="vertical" className="h-7" />
+              <StatPill label="Outstanding" value={<span className={outstanding > 0 ? "text-amber-600" : "text-emerald-600"}>{formatMoney(outstanding, data.currency)}</span>} />
+              <Separator orientation="vertical" className="h-7" />
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
+                <RefreshCw className="h-3.5 w-3.5" />
+              </Button>
+            </div>
           </div>
-        )}
-      </div>
-
-      {/* MAIN CONTENT — full width, no right column */}
-      <div className="px-6 pb-12 pt-4">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="mb-6 flex w-full justify-start overflow-x-auto rounded-none border-b bg-transparent p-0">
+          {/* Tab nav row */}
+          <TabsList className="flex w-full justify-start overflow-x-auto rounded-none border-b bg-transparent px-6 py-0">
             {[
               { value: "invoices", label: "Invoices & Payments", icon: FileCheck },
               { value: "communication", label: "Communication", icon: Mail },
@@ -222,6 +201,30 @@ export default function FinanceWorkspace() {
               </TabsTrigger>
             ))}
           </TabsList>
+        </div>
+
+        {/* ACTION BANNER — in scrollable area, never overlaps tabs */}
+        {recommendation && (
+          <div className="px-6 pt-4">
+            <div className={`flex items-center justify-between rounded-lg border px-4 py-2.5 text-sm ${
+              recommendation.tone === "warning" ? "border-amber-200 bg-amber-50 text-amber-900" :
+              recommendation.tone === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-900" :
+              "border-blue-200 bg-blue-50 text-blue-900"
+            }`}>
+              <div className="flex items-center gap-2">
+                <recommendation.icon className={`h-4 w-4 shrink-0 ${recommendation.tone === "warning" ? "text-amber-600" : recommendation.tone === "success" ? "text-emerald-600" : "text-blue-600"}`} />
+                <span className="font-medium">{recommendation.title}</span>
+                <span className="text-xs opacity-75 hidden sm:inline">— {recommendation.description}</span>
+              </div>
+              <Button size="sm" variant="outline" onClick={() => setActiveTab(recommendation.tab)} className="h-7 shrink-0 bg-white/60 hover:bg-white text-xs">
+                Take action <ArrowRight className="ml-1.5 h-3 w-3" />
+              </Button>
+            </div>
+          </div>
+        )}
+
+      {/* MAIN CONTENT */}
+      <div className="px-6 pb-12 pt-4">
 
           {/* ─── INVOICES & PAYMENTS TAB ─── */}
           <TabsContent value="invoices" className="outline-none">
@@ -633,109 +636,115 @@ export default function FinanceWorkspace() {
 
           {/* ─── CONTRACT PROFILE TAB ─── */}
           <TabsContent value="contract" className="outline-none">
-            <div className="max-w-3xl space-y-6">
-              <Card>
-                <CardHeader className="border-b">
-                  <CardTitle className="text-base">Client Information</CardTitle>
-                  <CardDescription>Details used for invoice generation and communication.</CardDescription>
-                </CardHeader>
-                <CardContent className="grid gap-4 pt-5 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label>Client Name</Label>
-                    <Input defaultValue={data.client_name} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Company</Label>
-                    <Input defaultValue={data.client_company} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Phone</Label>
-                    <Input defaultValue={data.client_phone} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Primary Email</Label>
-                    <Input type="email" defaultValue={data.case_email} />
-                  </div>
-                  <div className="space-y-1.5 sm:col-span-2">
-                    <Label>Alternative Emails</Label>
-                    <div className="flex flex-wrap gap-2 pt-1">
-                      {data.alt_emails.map(em => (
-                        <Badge key={em} variant="outline" className="font-normal text-sm px-3 py-1 gap-2">
-                          {em}
-                          <button className="text-muted-foreground hover:text-destructive"><X className="h-3 w-3" /></button>
-                        </Badge>
-                      ))}
-                      <Button variant="outline" size="sm" className="h-7 text-xs">
-                        <Plus className="mr-1 h-3 w-3" /> Add Email
-                      </Button>
+            <div className="space-y-6">
+              {/* Contract Details + Client Info side by side — Contract first */}
+              <div className="grid gap-6 lg:grid-cols-2">
+                {/* LEFT: Contract Details (first / most important) */}
+                <Card>
+                  <CardHeader className="border-b">
+                    <CardTitle className="text-base">Contract Details</CardTitle>
+                    <CardDescription>Financial and operational parameters for this case.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="grid gap-4 pt-5 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <Label>Contract Sum</Label>
+                      <div className="flex gap-2">
+                        <Input type="number" defaultValue={data.contract_sum} className="flex-1" />
+                        <Select defaultValue={data.currency}>
+                          <SelectTrigger className="w-24"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="MKD">MKD</SelectItem>
+                            <SelectItem value="EUR">EUR</SelectItem>
+                            <SelectItem value="USD">USD</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
-                  </div>
-                  <div className="space-y-1.5 sm:col-span-2">
-                    <Label>Address</Label>
-                    <Input defaultValue={data.client_address} />
-                  </div>
-                </CardContent>
-                <CardFooter className="justify-end gap-2 border-t py-4">
-                  <Button variant="outline">Reset</Button>
-                  <Button onClick={() => toast({ title: "Saved", description: "Client information updated." })}>Save Changes</Button>
-                </CardFooter>
-              </Card>
-
-              <Card>
-                <CardHeader className="border-b">
-                  <CardTitle className="text-base">Contract Details</CardTitle>
-                  <CardDescription>Financial and operational parameters for this case.</CardDescription>
-                </CardHeader>
-                <CardContent className="grid gap-4 pt-5 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label>Contract Sum</Label>
-                    <div className="flex gap-2">
-                      <Input type="number" defaultValue={data.contract_sum} className="flex-1" />
-                      <Select defaultValue={data.currency}>
-                        <SelectTrigger className="w-24"><SelectValue /></SelectTrigger>
+                    <div className="space-y-1.5">
+                      <Label>Finance Status</Label>
+                      <Select defaultValue={data.finance_status}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="MKD">MKD</SelectItem>
-                          <SelectItem value="EUR">EUR</SelectItem>
-                          <SelectItem value="USD">USD</SelectItem>
+                          <SelectItem value="GRAY">GRAY</SelectItem>
+                          <SelectItem value="YELLOW">YELLOW</SelectItem>
+                          <SelectItem value="GREEN">GREEN</SelectItem>
+                          <SelectItem value="RED">RED</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Finance Status</Label>
-                    <Select defaultValue={data.finance_status}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="GRAY">GRAY</SelectItem>
-                        <SelectItem value="YELLOW">YELLOW</SelectItem>
-                        <SelectItem value="GREEN">GREEN</SelectItem>
-                        <SelectItem value="RED">RED</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Finance Date</Label>
-                    <Input type="date" defaultValue={data.finance_date} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Payment Due Date</Label>
-                    <Input type="date" defaultValue={data.due_date} />
-                  </div>
-                  <div className="space-y-1.5 sm:col-span-2">
-                    <Label>Case / Service Type</Label>
-                    <Input defaultValue={data.request_type} />
-                  </div>
-                  <div className="space-y-1.5 sm:col-span-2">
-                    <Label>Notes</Label>
-                    <Textarea defaultValue={data.notes} className="resize-none" rows={3} />
-                  </div>
-                </CardContent>
-                <CardFooter className="justify-end gap-2 border-t py-4">
-                  <Button variant="outline">Reset</Button>
-                  <Button onClick={() => toast({ title: "Saved", description: "Contract details updated." })}>Save Changes</Button>
-                </CardFooter>
-              </Card>
+                    <div className="space-y-1.5">
+                      <Label>Finance Date</Label>
+                      <Input type="date" defaultValue={data.finance_date} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Payment Due Date</Label>
+                      <Input type="date" defaultValue={data.due_date} />
+                    </div>
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <Label>Case / Service Type</Label>
+                      <Input defaultValue={data.request_type} />
+                    </div>
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <Label>Notes</Label>
+                      <Textarea defaultValue={data.notes} className="resize-none" rows={4} />
+                    </div>
+                  </CardContent>
+                  <CardFooter className="justify-end gap-2 border-t py-4">
+                    <Button variant="outline">Reset</Button>
+                    <Button onClick={() => toast({ title: "Saved", description: "Contract details updated." })}>Save Changes</Button>
+                  </CardFooter>
+                </Card>
 
+                {/* RIGHT: Client Information */}
+                <Card>
+                  <CardHeader className="border-b">
+                    <CardTitle className="text-base">Client Information</CardTitle>
+                    <CardDescription>Details used for invoice generation and communication.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="grid gap-4 pt-5 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <Label>Client Name</Label>
+                      <Input defaultValue={data.client_name} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Company</Label>
+                      <Input defaultValue={data.client_company} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Phone</Label>
+                      <Input defaultValue={data.client_phone} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Primary Email</Label>
+                      <Input type="email" defaultValue={data.case_email} />
+                    </div>
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <Label>Alternative Emails</Label>
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        {data.alt_emails.map(em => (
+                          <Badge key={em} variant="outline" className="font-normal text-sm px-3 py-1 gap-2">
+                            {em}
+                            <button className="text-muted-foreground hover:text-destructive"><X className="h-3 w-3" /></button>
+                          </Badge>
+                        ))}
+                        <Button variant="outline" size="sm" className="h-7 text-xs">
+                          <Plus className="mr-1 h-3 w-3" /> Add Email
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <Label>Address</Label>
+                      <Input defaultValue={data.client_address} />
+                    </div>
+                  </CardContent>
+                  <CardFooter className="justify-end gap-2 border-t py-4">
+                    <Button variant="outline">Reset</Button>
+                    <Button onClick={() => toast({ title: "Saved", description: "Client information updated." })}>Save Changes</Button>
+                  </CardFooter>
+                </Card>
+              </div>
+
+              {/* Case Summary — full width below */}
               <Card>
                 <CardHeader className="border-b">
                   <CardTitle className="text-base flex items-center gap-2">
@@ -764,8 +773,8 @@ export default function FinanceWorkspace() {
               </Card>
             </div>
           </TabsContent>
-        </Tabs>
       </div>
+      </Tabs>
     </AppShell>
   );
 }
