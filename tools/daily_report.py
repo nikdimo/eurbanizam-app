@@ -83,8 +83,11 @@ def load_env():
 load_env()
 
 # --- CONFIGURATION ---
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
+SMTP_SERVER = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
+try:
+    SMTP_PORT = int(os.environ.get("SMTP_PORT", "587") or "587")
+except Exception:
+    SMTP_PORT = 587
 SENDER_EMAIL = os.environ.get("EMAIL_USER")
 SENDER_PASS = os.environ.get("EMAIL_PASS")
 RECEIVER_EMAIL = os.environ.get("EMAIL_RECEIVER", SENDER_EMAIL)

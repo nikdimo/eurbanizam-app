@@ -60,6 +60,16 @@ class CaseFilterOptions(BaseModel):
     statuses: list[str] = Field(default_factory=list)
 
 
+class CaseListQueryPayload(BaseModel):
+    q: Optional[str] = None
+    request_type: list[str] = Field(default_factory=list)
+    status: list[str] = Field(default_factory=list)
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+    limit: int = Field(default=100, ge=1, le=500)
+    offset: int = Field(default=0, ge=0)
+
+
 class PaginatedCaseList(BaseModel):
     items: list[CaseListItem] = Field(default_factory=list)
     total: int = 0

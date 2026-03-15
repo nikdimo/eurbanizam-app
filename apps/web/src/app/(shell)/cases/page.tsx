@@ -320,34 +320,28 @@ function getResolvedDateRange(filters: FilterState): {
   return {};
 }
 
-function buildCasesPath(
+function buildCasesQuery(
   filters: FilterState,
   pagination?: { pageIndex: number; pageSize: number },
-): string {
-  const params = new URLSearchParams();
-  const search = filters.search.trim();
-  if (search) {
-    params.set("q", search);
-  }
-  for (const requestType of filters.requestTypes ?? []) {
-    params.append("request_type", requestType);
-  }
-  for (const status of filters.statuses ?? []) {
-    params.append("status", status);
-  }
-
+): {
+  q?: string;
+  request_type: string[];
+  status: string[];
+  date_from?: string;
+  date_to?: string;
+  limit?: number;
+  offset?: number;
+} {
   const { dateFrom, dateTo } = getResolvedDateRange(filters);
-  if (dateFrom && dateTo) {
-    params.set("date_from", dateFrom);
-    params.set("date_to", dateTo);
-  }
-  if (pagination) {
-    params.set("limit", String(pagination.pageSize));
-    params.set("offset", String(pagination.pageIndex * pagination.pageSize));
-  }
-
-  const query = params.toString();
-  return query ? `/api/cases?${query}` : "/api/cases";
+  return {
+    q: filters.search.trim() || undefined,
+    request_type: filters.requestTypes ?? [],
+    status: filters.statuses ?? [],
+    date_from: dateFrom,
+    date_to: dateTo,
+    limit: pagination?.pageSize,
+    offset: pagination ? pagination.pageIndex * pagination.pageSize : undefined,
+  };
 }
 
 function summarizeSelection(
@@ -970,18 +964,26 @@ export default function CasesPage() {
       return;
     }
 
-    const res = await apiClient.getParsed(
-      buildCasesPath(filters, nextPagination),
-      PaginatedCaseListSchema,
+    const res = await apiClient.post<unknown>(
+      "/api/cases/query",
+      buildCasesQuery(filters, nextPagination),
     );
-    if (res.error) {
+    if (res.error || res.data == null) {
       setError(res.error);
       setData([]);
       setTotalRows(0);
-    } else if (res.data) {
+    } else {
+      const parsed = PaginatedCaseListSchema.safeParse(res.data);
+      if (!parsed.success) {
+        setError("Unexpected response shape from server.");
+        setData([]);
+        setTotalRows(0);
+        setIsLoading(false);
+        return;
+      }
       setError(null);
-      setData(res.data.items);
-      setTotalRows(res.data.total);
+      setData(parsed.data.items);
+      setTotalRows(parsed.data.total);
     }
     setIsLoading(false);
   }, []);
