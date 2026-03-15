@@ -61,7 +61,20 @@ type Notice = {
 
 type ProjectDraft = {
   finance_pin: string;
+  deployment_label: string;
+  api_service_name: string;
+  web_service_name: string;
   bot_service_name: string;
+  portal_username: string;
+  portal_password: string;
+  report_sender_email: string;
+  report_sender_password: string;
+  report_recipient_emails: string;
+  smtp_server: string;
+  smtp_port: string;
+  telegram_chat_id: string;
+  telegram_bot_token: string;
+  google_api_key: string;
   automation_timezone: string;
   smart_sync_schedule_enabled: string;
   smart_sync_time: string;
@@ -106,7 +119,20 @@ type FinanceDraft = {
 
 const DEFAULT_PROJECT_DRAFT: ProjectDraft = {
   finance_pin: "",
+  deployment_label: "",
+  api_service_name: "eurbanizam-api.service",
+  web_service_name: "eurbanizam-web.service",
   bot_service_name: "",
+  portal_username: "",
+  portal_password: "",
+  report_sender_email: "",
+  report_sender_password: "",
+  report_recipient_emails: "",
+  smtp_server: "smtp.gmail.com",
+  smtp_port: "587",
+  telegram_chat_id: "",
+  telegram_bot_token: "",
+  google_api_key: "",
   automation_timezone: "Europe/Copenhagen",
   smart_sync_schedule_enabled: "false",
   smart_sync_time: "04:00",
@@ -164,9 +190,28 @@ function buildProjectDraft(state?: ProjectManagementState | null): ProjectDraft 
     return DEFAULT_PROJECT_DRAFT;
   }
   const config = state.config;
+  const operations = state.operations;
   return {
     finance_pin: String(config.finance_pin ?? ""),
+    deployment_label: String(config.deployment_label ?? ""),
+    api_service_name: String(
+      config.api_service_name ?? "eurbanizam-api.service",
+    ),
+    web_service_name: String(
+      config.web_service_name ?? "eurbanizam-web.service",
+    ),
     bot_service_name: String(config.bot_service_name ?? ""),
+    portal_username: String(operations.portal_username ?? ""),
+    portal_password: String(operations.portal_password ?? ""),
+    report_sender_email: String(operations.report_sender_email ?? ""),
+    report_sender_password: String(operations.report_sender_password ?? ""),
+    report_recipient_emails: String(operations.report_recipient_emails ?? ""),
+    smtp_server: String(operations.smtp_server ?? "smtp.gmail.com"),
+    smtp_port:
+      operations.smtp_port == null ? "587" : String(operations.smtp_port),
+    telegram_chat_id: String(operations.telegram_chat_id ?? ""),
+    telegram_bot_token: String(operations.telegram_bot_token ?? ""),
+    google_api_key: String(operations.google_api_key ?? ""),
     automation_timezone: String(config.automation_timezone ?? "Europe/Copenhagen"),
     smart_sync_schedule_enabled: config.smart_sync_schedule_enabled
       ? "true"
@@ -446,7 +491,22 @@ export default function SettingsPage() {
 
     const response = await apiClient.patch<unknown>("/api/settings/management", {
       finance_pin: projectDraft.finance_pin.trim() || null,
+      deployment_label: projectDraft.deployment_label.trim() || null,
+      api_service_name: projectDraft.api_service_name.trim() || null,
+      web_service_name: projectDraft.web_service_name.trim() || null,
       bot_service_name: projectDraft.bot_service_name.trim() || null,
+      portal_username: projectDraft.portal_username.trim() || null,
+      portal_password: projectDraft.portal_password.trim() || null,
+      report_sender_email: projectDraft.report_sender_email.trim() || null,
+      report_sender_password:
+        projectDraft.report_sender_password.trim() || null,
+      report_recipient_emails:
+        projectDraft.report_recipient_emails.trim() || null,
+      smtp_server: projectDraft.smtp_server.trim() || null,
+      smtp_port: projectDraft.smtp_port ? Number(projectDraft.smtp_port) : null,
+      telegram_chat_id: projectDraft.telegram_chat_id.trim() || null,
+      telegram_bot_token: projectDraft.telegram_bot_token.trim() || null,
+      google_api_key: projectDraft.google_api_key.trim() || null,
       automation_timezone:
         projectDraft.automation_timezone.trim() || "Europe/Copenhagen",
       smart_sync_schedule_enabled:
@@ -502,7 +562,7 @@ export default function SettingsPage() {
     setProjectDraft(buildProjectDraft(parsed.data));
     setProjectNotice({
       tone: "success",
-      message: "Project behavior and scheduler settings saved.",
+      message: "Project behavior, automation access, and scheduler settings saved.",
     });
     setProjectSaving(false);
   };
@@ -731,6 +791,48 @@ export default function SettingsPage() {
                     />
                   </SettingField>
                   <SettingField
+                    label="Deployment Label"
+                    hint="Shown in automation emails so you know which machine sent them."
+                  >
+                    <Input
+                      value={projectDraft.deployment_label}
+                      onChange={(event) =>
+                        setProjectDraft((current) => ({
+                          ...current,
+                          deployment_label: event.target.value,
+                        }))
+                      }
+                    />
+                  </SettingField>
+                  <SettingField
+                    label="API Service Name"
+                    hint="Systemd unit checked by healthcheck for the backend API."
+                  >
+                    <Input
+                      value={projectDraft.api_service_name}
+                      onChange={(event) =>
+                        setProjectDraft((current) => ({
+                          ...current,
+                          api_service_name: event.target.value,
+                        }))
+                      }
+                    />
+                  </SettingField>
+                  <SettingField
+                    label="Web Service Name"
+                    hint="Systemd unit checked by healthcheck for the Next.js web app."
+                  >
+                    <Input
+                      value={projectDraft.web_service_name}
+                      onChange={(event) =>
+                        setProjectDraft((current) => ({
+                          ...current,
+                          web_service_name: event.target.value,
+                        }))
+                      }
+                    />
+                  </SettingField>
+                  <SettingField
                     label="Telegram Service Name"
                     hint="Service unit name when you want bot controls to match your server naming."
                   >
@@ -811,6 +913,202 @@ export default function SettingsPage() {
                       }
                     />
                   </SettingField>
+                </div>
+
+                <div className="space-y-4 rounded-2xl border border-border/60 bg-muted/30 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <h3 className="text-sm font-semibold text-foreground">
+                        Automation Access and Delivery
+                      </h3>
+                      <p className="text-xs text-muted-foreground">
+                        These values power scrapers, the daily report, Telegram,
+                        and AI-assisted bot flows.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <StatusPill
+                        label="Portal"
+                        tone={
+                          managementState.runtime.portal_credentials_configured
+                            ? "success"
+                            : "error"
+                        }
+                      />
+                      <StatusPill
+                        label="Report Mail"
+                        tone={
+                          managementState.runtime.email_credentials_configured
+                            ? "success"
+                            : "error"
+                        }
+                      />
+                      <StatusPill
+                        label="Telegram"
+                        tone={
+                          managementState.runtime.telegram_credentials_configured
+                            ? "success"
+                            : "error"
+                        }
+                      />
+                      <StatusPill
+                        label="Google AI"
+                        tone={
+                          managementState.runtime.google_api_key_configured
+                            ? "success"
+                            : "info"
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <SettingField
+                      label="Portal Username"
+                      hint="Used by smart sync and full scrape jobs."
+                    >
+                      <Input
+                        value={projectDraft.portal_username}
+                        onChange={(event) =>
+                          setProjectDraft((current) => ({
+                            ...current,
+                            portal_username: event.target.value,
+                          }))
+                        }
+                      />
+                    </SettingField>
+                    <SettingField
+                      label="Portal Password"
+                      hint="Stored for scraper runs. Leave empty only if you want to clear it."
+                    >
+                      <Input
+                        type="password"
+                        value={projectDraft.portal_password}
+                        onChange={(event) =>
+                          setProjectDraft((current) => ({
+                            ...current,
+                            portal_password: event.target.value,
+                          }))
+                        }
+                      />
+                    </SettingField>
+                    <SettingField
+                      label="Report Sender Email"
+                      hint="Used by daily report and healthcheck mail."
+                    >
+                      <Input
+                        value={projectDraft.report_sender_email}
+                        onChange={(event) =>
+                          setProjectDraft((current) => ({
+                            ...current,
+                            report_sender_email: event.target.value,
+                          }))
+                        }
+                      />
+                    </SettingField>
+                    <SettingField
+                      label="Report Sender Password"
+                      hint="SMTP password for daily report and healthcheck delivery."
+                    >
+                      <Input
+                        type="password"
+                        value={projectDraft.report_sender_password}
+                        onChange={(event) =>
+                          setProjectDraft((current) => ({
+                            ...current,
+                            report_sender_password: event.target.value,
+                          }))
+                        }
+                      />
+                    </SettingField>
+                    <SettingField
+                      label="Report Recipients"
+                      hint="Comma-separated. If left blank, the sender address is used."
+                    >
+                      <Input
+                        value={projectDraft.report_recipient_emails}
+                        onChange={(event) =>
+                          setProjectDraft((current) => ({
+                            ...current,
+                            report_recipient_emails: event.target.value,
+                          }))
+                        }
+                      />
+                    </SettingField>
+                    <SettingField
+                      label="Report SMTP Host"
+                      hint="Defaults to smtp.gmail.com when left blank."
+                    >
+                      <Input
+                        value={projectDraft.smtp_server}
+                        onChange={(event) =>
+                          setProjectDraft((current) => ({
+                            ...current,
+                            smtp_server: event.target.value,
+                          }))
+                        }
+                      />
+                    </SettingField>
+                    <SettingField
+                      label="Report SMTP Port"
+                      hint="Defaults to 587."
+                    >
+                      <Input
+                        type="number"
+                        value={projectDraft.smtp_port}
+                        onChange={(event) =>
+                          setProjectDraft((current) => ({
+                            ...current,
+                            smtp_port: event.target.value,
+                          }))
+                        }
+                      />
+                    </SettingField>
+                    <SettingField
+                      label="Telegram Chat ID"
+                      hint="Used by the Telegram bot for its target chat."
+                    >
+                      <Input
+                        value={projectDraft.telegram_chat_id}
+                        onChange={(event) =>
+                          setProjectDraft((current) => ({
+                            ...current,
+                            telegram_chat_id: event.target.value,
+                          }))
+                        }
+                      />
+                    </SettingField>
+                    <SettingField
+                      label="Telegram Bot Token"
+                      hint="The bot token used when launching the Telegram service."
+                    >
+                      <Input
+                        type="password"
+                        value={projectDraft.telegram_bot_token}
+                        onChange={(event) =>
+                          setProjectDraft((current) => ({
+                            ...current,
+                            telegram_bot_token: event.target.value,
+                          }))
+                        }
+                      />
+                    </SettingField>
+                    <SettingField
+                      label="Google AI Key"
+                      hint="Used by the Telegram assistant layer when AI responses are enabled."
+                    >
+                      <Input
+                        type="password"
+                        value={projectDraft.google_api_key}
+                        onChange={(event) =>
+                          setProjectDraft((current) => ({
+                            ...current,
+                            google_api_key: event.target.value,
+                          }))
+                        }
+                      />
+                    </SettingField>
+                  </div>
                 </div>
 
                 <div className="space-y-4 rounded-2xl border border-border/60 bg-muted/30 p-4">
@@ -1475,6 +1773,10 @@ export default function SettingsPage() {
                   <StatusRow
                     label="Telegram credentials"
                     ok={managementState.runtime.telegram_credentials_configured}
+                  />
+                  <StatusRow
+                    label="Google AI key"
+                    ok={managementState.runtime.google_api_key_configured}
                   />
                   <StatusRow
                     label="Database path"

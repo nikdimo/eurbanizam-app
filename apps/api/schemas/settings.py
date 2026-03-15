@@ -7,6 +7,9 @@ from pydantic import BaseModel, Field
 
 class ProjectManagementConfig(BaseModel):
     finance_pin: Optional[str] = None
+    deployment_label: Optional[str] = None
+    api_service_name: Optional[str] = None
+    web_service_name: Optional[str] = None
     bot_service_name: Optional[str] = None
     automation_timezone: str = "Europe/Copenhagen"
     smart_sync_schedule_enabled: bool = False
@@ -26,8 +29,24 @@ class ProjectManagementConfig(BaseModel):
     headless_mode: Optional[bool] = None
 
 
+class OperationalSettings(BaseModel):
+    portal_username: Optional[str] = None
+    portal_password: Optional[str] = None
+    report_sender_email: Optional[str] = None
+    report_sender_password: Optional[str] = None
+    report_recipient_emails: Optional[str] = None
+    smtp_server: Optional[str] = None
+    smtp_port: Optional[int] = None
+    telegram_chat_id: Optional[str] = None
+    telegram_bot_token: Optional[str] = None
+    google_api_key: Optional[str] = None
+
+
 class ProjectManagementUpdatePayload(BaseModel):
     finance_pin: Optional[str] = None
+    deployment_label: Optional[str] = None
+    api_service_name: Optional[str] = None
+    web_service_name: Optional[str] = None
     bot_service_name: Optional[str] = None
     automation_timezone: Optional[str] = None
     smart_sync_schedule_enabled: Optional[bool] = None
@@ -45,6 +64,16 @@ class ProjectManagementUpdatePayload(BaseModel):
     smart_sync_test_pages: Optional[int] = None
     full_scrape_test_pages: Optional[int] = None
     headless_mode: Optional[bool] = None
+    portal_username: Optional[str] = None
+    portal_password: Optional[str] = None
+    report_sender_email: Optional[str] = None
+    report_sender_password: Optional[str] = None
+    report_recipient_emails: Optional[str] = None
+    smtp_server: Optional[str] = None
+    smtp_port: Optional[int] = None
+    telegram_chat_id: Optional[str] = None
+    telegram_bot_token: Optional[str] = None
+    google_api_key: Optional[str] = None
 
 
 class RuntimeStatus(BaseModel):
@@ -69,6 +98,7 @@ class RuntimeStatus(BaseModel):
     portal_credentials_configured: bool = False
     email_credentials_configured: bool = False
     telegram_credentials_configured: bool = False
+    google_api_key_configured: bool = False
 
 
 class RuntimeMetrics(BaseModel):
@@ -121,6 +151,7 @@ class ManagedProcessStatus(BaseModel):
 
 class ProjectManagementState(BaseModel):
     config: ProjectManagementConfig
+    operations: OperationalSettings
     runtime: RuntimeStatus
     metrics: RuntimeMetrics
     health: HealthStatus

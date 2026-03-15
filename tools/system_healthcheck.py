@@ -10,6 +10,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
 
+from runtime_identity import get_runtime_identity, get_service_units
+
 ROOT = Path(__file__).resolve().parents[1]
 SETTINGS_PATH = ROOT / "settings.json"
 
@@ -158,7 +160,12 @@ def check_latest_sync(db_path: Path, stale_hours: int) -> tuple[bool, str]:
     return True, f"Last smart_sync finished {age_h:.1f}h ago at {latest}"
 
 
-def send_email(subject: str, body_html: str, recipients: list[str]) -> tuple[bool, str]:
+def send_email(
+    subject: str,
+    body_html: str,
+    recipients: list[str],
+    identity: dict[str, str],
+) -> tuple[bool, str]:
     smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
     smtp_port = int(os.environ.get("SMTP_PORT", "587"))
     sender = os.environ.get("EMAIL_USER")
@@ -173,6 +180,8 @@ def send_email(subject: str, body_html: str, recipients: list[str]) -> tuple[boo
     msg["From"] = sender
     msg["To"] = ", ".join(recipients)
     msg["Subject"] = subject
+    msg["X-Eurbanizam-Source"] = identity["source"]
+    msg["X-Eurbanizam-Host"] = identity["hostname"]
     msg.attach(MIMEText(body_html, "html"))
 
     try:
@@ -199,27 +208,36 @@ def main() -> int:
     parser.add_argument("--remind-hours", type=int, default=12)
     parser.add_argument("--force-email", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--admin-unit", default="eurbanizam-admin.service")
-    parser.add_argument("--bot-unit", default="eurbanizam-bot.service")
+    parser.add_argument("--api-unit", default=None)
+    parser.add_argument("--web-unit", default=None)
+    parser.add_argument("--bot-unit", default=None)
     parser.add_argument("--daily-timer-unit", default="eurbanizam-daily.timer")
     args = parser.parse_args()
 
     settings = load_settings(SETTINGS_PATH)
+    settings_raw = settings.get("raw", {})
     runtime_root: Path = settings["runtime_root"]
     db_path: Path = settings["local_db_path"]
     env_path = runtime_root / "secrets" / ".eurbanizam_secrets.env"
     state_path = runtime_root / "state" / "system_health_state.json"
 
     load_env_file(env_path)
+    identity = get_runtime_identity(settings_raw, os.environ)
+    service_units = get_service_units(settings_raw)
+    api_unit = str(args.api_unit or service_units["api"]).strip()
+    web_unit = str(args.web_unit or service_units["web"]).strip()
+    bot_unit = str(args.bot_unit or service_units["bot"]).strip()
     recipients = parse_recipients(os.environ.get("EMAIL_RECEIVER"))
 
     checks = []
-    ok, detail = run_systemctl_is_active(args.admin_unit)
-    checks.append(("admin_service", ok, detail))
-    ok, detail = run_systemctl_is_active(args.bot_unit)
-    checks.append(("bot_service", ok, detail))
+    ok, detail = run_systemctl_is_active(api_unit)
+    checks.append(("api_service", ok, f"{api_unit}: {detail}"))
+    ok, detail = run_systemctl_is_active(web_unit)
+    checks.append(("web_service", ok, f"{web_unit}: {detail}"))
+    ok, detail = run_systemctl_is_active(bot_unit)
+    checks.append(("bot_service", ok, f"{bot_unit}: {detail}"))
     ok, detail = run_systemctl_is_active(args.daily_timer_unit)
-    checks.append(("daily_timer", ok, detail))
+    checks.append(("daily_timer", ok, f"{args.daily_timer_unit}: {detail}"))
     ok, detail = check_latest_sync(db_path, args.stale_hours)
     checks.append(("smart_sync_freshness", ok, detail))
 
@@ -261,6 +279,7 @@ def main() -> int:
     )
     body = (
         "<h3>Eurbanizam VPS Healthcheck</h3>"
+        f"<p><strong>Source:</strong> {identity['source']}</p>"
         f"<p>Status: <strong>{'HEALTHY' if healthy else 'UNHEALTHY'}</strong></p>"
         f"<p>Checked at: {now_iso} UTC</p>"
         "<table border='1' cellpadding='6' cellspacing='0'>"
@@ -271,8 +290,8 @@ def main() -> int:
     email_ok = True
     email_msg = "Email not required"
     if should_email and not args.dry_run:
-        subj = f"[{subject_state}] Eurbanizam Healthcheck"
-        email_ok, email_msg = send_email(subj, body, recipients)
+        subj = f"[{subject_state}] [{identity['label']}] Eurbanizam Healthcheck"
+        email_ok, email_msg = send_email(subj, body, recipients, identity)
 
     new_state = {
         "status": "healthy" if healthy else "unhealthy",

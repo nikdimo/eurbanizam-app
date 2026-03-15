@@ -204,8 +204,26 @@ export const FinanceSettingsSchema = z.object({
 
 export type FinanceSettings = z.infer<typeof FinanceSettingsSchema>;
 
+export const OperationalSettingsSchema = z.object({
+  portal_username: z.string().nullable().optional(),
+  portal_password: z.string().nullable().optional(),
+  report_sender_email: z.string().nullable().optional(),
+  report_sender_password: z.string().nullable().optional(),
+  report_recipient_emails: z.string().nullable().optional(),
+  smtp_server: z.string().nullable().optional(),
+  smtp_port: z.number().nullable().optional(),
+  telegram_chat_id: z.string().nullable().optional(),
+  telegram_bot_token: z.string().nullable().optional(),
+  google_api_key: z.string().nullable().optional(),
+});
+
+export type OperationalSettings = z.infer<typeof OperationalSettingsSchema>;
+
 export const ProjectManagementConfigSchema = z.object({
   finance_pin: z.string().nullable().optional(),
+  deployment_label: z.string().nullable().optional(),
+  api_service_name: z.string().nullable().optional(),
+  web_service_name: z.string().nullable().optional(),
   bot_service_name: z.string().nullable().optional(),
   automation_timezone: z.string().default("Europe/Copenhagen"),
   smart_sync_schedule_enabled: z.boolean().default(false),
@@ -251,6 +269,7 @@ export const RuntimeStatusSchema = z.object({
   portal_credentials_configured: z.boolean().default(false),
   email_credentials_configured: z.boolean().default(false),
   telegram_credentials_configured: z.boolean().default(false),
+  google_api_key_configured: z.boolean().default(false),
 });
 
 export type RuntimeStatus = z.infer<typeof RuntimeStatusSchema>;
@@ -317,6 +336,7 @@ export type ManagedProcessStatus = z.infer<typeof ManagedProcessStatusSchema>;
 
 export const ProjectManagementStateSchema = z.object({
   config: ProjectManagementConfigSchema,
+  operations: OperationalSettingsSchema,
   runtime: RuntimeStatusSchema,
   metrics: RuntimeMetricsSchema,
   health: HealthStatusSchema,

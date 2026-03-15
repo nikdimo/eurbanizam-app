@@ -23,6 +23,7 @@ from ..schemas.settings import (
     JobActionResult,
     JobRunSummary,
     ManagedProcessStatus,
+    OperationalSettings,
     ProjectManagementConfig,
     ProjectManagementState,
     ProjectManagementUpdatePayload,
@@ -37,6 +38,8 @@ ROOT = Path(__file__).resolve().parents[3]
 TOOLS_DIR = ROOT / "tools"
 CRON_BLOCK_START = "# BEGIN EURBANIZAM_MANAGED"
 CRON_BLOCK_END = "# END EURBANIZAM_MANAGED"
+DEFAULT_API_SERVICE_NAME = "eurbanizam-api.service"
+DEFAULT_WEB_SERVICE_NAME = "eurbanizam-web.service"
 DEFAULT_BOT_SERVICE_NAME = "eurbanizam-bot.service"
 
 
@@ -114,6 +117,7 @@ _PROCESS_SCAN_CACHE: dict[str, Any] = {
     "expires_at": 0.0,
     "value": None,
 }
+ENV_FILE_ENCODINGS = ("utf-8", "utf-8-sig", "cp1252", "latin-1")
 
 
 def _now_stamp() -> str:
@@ -175,6 +179,78 @@ def _read_secret_keys(path: Path) -> set[str]:
     return keys
 
 
+def _read_text_with_fallback(path: Path) -> tuple[str, str]:
+    for encoding in ENV_FILE_ENCODINGS:
+        try:
+            return path.read_text(encoding=encoding), encoding
+        except Exception:
+            continue
+    return "", "utf-8"
+
+
+def _load_env_values(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+    text, _ = _read_text_with_fallback(path)
+    values: dict[str, str] = {}
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        key = key.strip()
+        if key:
+            values[key] = value.strip()
+    return values
+
+
+def _normalize_secret_text(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _update_env_values(path: Path, updates: dict[str, Optional[str]]) -> None:
+    existing_lines: list[str] = []
+    encoding = "utf-8"
+    if path.exists():
+        text, encoding = _read_text_with_fallback(path)
+        existing_lines = text.splitlines()
+
+    normalized_updates: dict[str, Optional[str]] = {
+        key: _normalize_secret_text(value) for key, value in updates.items()
+    }
+    touched_keys = set(normalized_updates)
+    output_lines: list[str] = []
+    seen_keys: set[str] = set()
+
+    for line in existing_lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in line:
+            output_lines.append(line)
+            continue
+        key, _value = line.split("=", 1)
+        key = key.strip()
+        if key not in touched_keys:
+            output_lines.append(line)
+            continue
+        seen_keys.add(key)
+        replacement = normalized_updates[key]
+        if replacement is None:
+            continue
+        output_lines.append(f"{key}={replacement}")
+
+    for key, replacement in normalized_updates.items():
+        if key in seen_keys or replacement is None:
+            continue
+        output_lines.append(f"{key}={replacement}")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    content = "\n".join(output_lines).rstrip()
+    path.write_text(f"{content}\n" if content else "", encoding=encoding)
+
+
 def _has_table(conn, table_name: str) -> bool:
     row = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?",
@@ -200,6 +276,13 @@ def _load_management_section(raw: dict[str, Any]) -> ProjectManagementConfig:
     tools = management.get("tools") if isinstance(management.get("tools"), dict) else {}
     return ProjectManagementConfig(
         finance_pin=str(raw.get("finance_pin") or "").strip() or None,
+        deployment_label=str(raw.get("deployment_label") or "").strip() or None,
+        api_service_name=str(
+            raw.get("api_service_name") or DEFAULT_API_SERVICE_NAME
+        ).strip(),
+        web_service_name=str(
+            raw.get("web_service_name") or DEFAULT_WEB_SERVICE_NAME
+        ).strip(),
         bot_service_name=str(raw.get("bot_service_name") or DEFAULT_BOT_SERVICE_NAME),
         automation_timezone=str(
             automation.get("timezone")
@@ -326,6 +409,10 @@ class ManagementService:
     def logs_dir(self) -> Path:
         return Path(self.settings["local_logs_dir"])
 
+    @property
+    def secrets_path(self) -> Path:
+        return self.runtime_root / "secrets" / ".eurbanizam_secrets.env"
+
     def get_management_state(self) -> ProjectManagementState:
         now = time.monotonic()
         cached = _MANAGEMENT_STATE_CACHE.get("value")
@@ -335,6 +422,7 @@ class ManagementService:
         health = self.get_health_status()
         state = ProjectManagementState(
             config=self.config,
+            operations=self.get_operational_settings(),
             runtime=self.get_runtime_status(),
             metrics=self.get_runtime_metrics(),
             health=health,
@@ -347,6 +435,30 @@ class ManagementService:
             now + MANAGEMENT_STATE_CACHE_TTL_SECONDS
         )
         return state
+
+    def get_operational_settings(self) -> OperationalSettings:
+        env = _load_env_values(self.secrets_path)
+        smtp_port_raw = env.get("SMTP_PORT")
+        smtp_port = None
+        if smtp_port_raw:
+            try:
+                smtp_port = int(str(smtp_port_raw).strip())
+            except Exception:
+                smtp_port = None
+        return OperationalSettings(
+            portal_username=env.get("PORTAL_USERNAME") or env.get("EURB_USER"),
+            portal_password=env.get("PORTAL_PASSWORD") or env.get("EURB_PASS"),
+            report_sender_email=env.get("EMAIL_USER"),
+            report_sender_password=env.get("EMAIL_PASS"),
+            report_recipient_emails=env.get("EMAIL_RECEIVER"),
+            smtp_server=env.get("SMTP_SERVER") or "smtp.gmail.com",
+            smtp_port=smtp_port or 587,
+            telegram_chat_id=env.get("TELEGRAM_CHAT_ID"),
+            telegram_bot_token=env.get("TELEGRAM_BOT_TOKEN")
+            or env.get("BOT_TOKEN")
+            or env.get("TELEGRAM_TOKEN"),
+            google_api_key=env.get("GOOGLE_API_KEY") or env.get("GEMINI_API_KEY"),
+        )
 
     def get_runtime_status(self) -> RuntimeStatus:
         secrets_path = self.runtime_root / "secrets" / ".eurbanizam_secrets.env"
@@ -384,6 +496,9 @@ class ManagementService:
             ),
             telegram_credentials_configured={"TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"}.issubset(
                 secret_keys
+            ),
+            google_api_key_configured=bool(
+                {"GOOGLE_API_KEY", "GEMINI_API_KEY"} & secret_keys
             ),
         )
 
@@ -575,6 +690,24 @@ class ManagementService:
             current_raw["finance_pin"] = (
                 str(payload.finance_pin).strip() if payload.finance_pin else None
             )
+        if "deployment_label" in fields:
+            current_raw["deployment_label"] = (
+                str(payload.deployment_label).strip()
+                if payload.deployment_label
+                else None
+            )
+        if "api_service_name" in fields:
+            current_raw["api_service_name"] = (
+                str(payload.api_service_name).strip()
+                if payload.api_service_name
+                else DEFAULT_API_SERVICE_NAME
+            )
+        if "web_service_name" in fields:
+            current_raw["web_service_name"] = (
+                str(payload.web_service_name).strip()
+                if payload.web_service_name
+                else DEFAULT_WEB_SERVICE_NAME
+            )
         if "bot_service_name" in fields:
             current_raw["bot_service_name"] = (
                 str(payload.bot_service_name).strip()
@@ -666,13 +799,49 @@ class ManagementService:
         management["tools"] = tools
         current_raw["management"] = management
 
+        env_updates: dict[str, Optional[str]] = {}
+        if "portal_username" in fields:
+            env_updates["PORTAL_USERNAME"] = payload.portal_username
+            env_updates["EURB_USER"] = None
+        if "portal_password" in fields:
+            env_updates["PORTAL_PASSWORD"] = payload.portal_password
+            env_updates["EURB_PASS"] = None
+        if "report_sender_email" in fields:
+            env_updates["EMAIL_USER"] = payload.report_sender_email
+        if "report_sender_password" in fields:
+            env_updates["EMAIL_PASS"] = payload.report_sender_password
+        if "report_recipient_emails" in fields:
+            env_updates["EMAIL_RECEIVER"] = payload.report_recipient_emails
+        if "smtp_server" in fields:
+            env_updates["SMTP_SERVER"] = payload.smtp_server
+        if "smtp_port" in fields:
+            env_updates["SMTP_PORT"] = (
+                str(payload.smtp_port).strip()
+                if payload.smtp_port is not None
+                else None
+            )
+        if "telegram_chat_id" in fields:
+            env_updates["TELEGRAM_CHAT_ID"] = payload.telegram_chat_id
+        if "telegram_bot_token" in fields:
+            env_updates["TELEGRAM_BOT_TOKEN"] = payload.telegram_bot_token
+            env_updates["BOT_TOKEN"] = None
+            env_updates["TELEGRAM_TOKEN"] = None
+        if "google_api_key" in fields:
+            env_updates["GOOGLE_API_KEY"] = payload.google_api_key
+            env_updates["GEMINI_API_KEY"] = None
+
         save_app_settings_keys(
             {
                 "finance_pin": current_raw.get("finance_pin"),
+                "deployment_label": current_raw.get("deployment_label"),
+                "api_service_name": current_raw.get("api_service_name"),
+                "web_service_name": current_raw.get("web_service_name"),
                 "bot_service_name": current_raw.get("bot_service_name"),
                 "management": current_raw.get("management"),
             }
         )
+        if env_updates:
+            _update_env_values(self.secrets_path, env_updates)
         self.settings = load_app_settings()
         _invalidate_management_caches()
         self.apply_scheduler()

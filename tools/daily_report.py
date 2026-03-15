@@ -14,6 +14,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from runtime_identity import get_runtime_identity
+
 # --- FIX: FORCE UTF-8 OUTPUT ON WINDOWS ---
 try:
     sys.stdout.reconfigure(encoding='utf-8')
@@ -392,7 +394,7 @@ def build_excel_attachment(payload: dict):
     return xlsx_bytes.read()
 
 
-def build_html_body(payload: dict, hours: int):
+def build_html_body(payload: dict, hours: int, identity: dict[str, str]):
     return f"""
     <html>
     <head>
@@ -406,6 +408,7 @@ def build_html_body(payload: dict, hours: int):
     </head>
     <body>
       <h2>E-Urbanizam Activity Report</h2>
+      <p><strong>Source:</strong> {identity["source"]}</p>
       <p>Window for New/Updated sections: last {hours} hours.</p>
       <p><strong>Excel:</strong> Download the attached file with sheets: New Cases, Updated Cases, Late Cases.</p>
       {section_html("1. New Cases", payload["new_df"])}
@@ -420,6 +423,7 @@ def build_html_body(payload: dict, hours: int):
 def send_email(receiver_override=None, dry_run=False, hours=24):
     print("[INFO] Generating Daily Report...")
     payload = build_report_payload(hours=hours)
+    identity = get_runtime_identity(SETTINGS["raw"], os.environ)
     receiver_raw = receiver_override or RECEIVER_EMAIL
     recipients = parse_recipients(receiver_raw)
     total = payload["new_count"] + payload["updated_count"] + payload["late_count"]
@@ -431,7 +435,7 @@ def send_email(receiver_override=None, dry_run=False, hours=24):
     report_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     snapshots_dir = RUNTIME_ROOT / "snapshots"
     snapshots_dir.mkdir(parents=True, exist_ok=True)
-    html_body = build_html_body(payload, hours=hours)
+    html_body = build_html_body(payload, hours=hours, identity=identity)
     xlsx_blob = build_excel_attachment(payload)
     xlsx_name = f"eurbanizam_report_{report_ts}.xlsx"
 
@@ -454,7 +458,12 @@ def send_email(receiver_override=None, dry_run=False, hours=24):
     msg = MIMEMultipart()
     msg["From"] = SENDER_EMAIL
     msg["To"] = ", ".join(recipients)
-    msg["Subject"] = f"E-Urbanizam Daily Report - {datetime.now().strftime('%d %b %Y')}"
+    msg["Subject"] = (
+        f"[{identity['label']}] E-Urbanizam Daily Report - "
+        f"{datetime.now().strftime('%d %b %Y')}"
+    )
+    msg["X-Eurbanizam-Source"] = identity["source"]
+    msg["X-Eurbanizam-Host"] = identity["hostname"]
     msg.attach(MIMEText(html_body, "html"))
 
     attachment = MIMEBase(
@@ -472,7 +481,10 @@ def send_email(receiver_override=None, dry_run=False, hours=24):
         server.login(SENDER_EMAIL, SENDER_PASS)
         server.send_message(msg, to_addrs=recipients)
         server.quit()
-        print(f"[SUCCESS] Email sent successfully to {', '.join(recipients)}.")
+        print(
+            f"[SUCCESS] Email sent successfully from {identity['source']} "
+            f"to {', '.join(recipients)}."
+        )
         print(f"   Included {total} rows across 3 sections.")
         return "Email sent successfully!"
     except Exception as e:
