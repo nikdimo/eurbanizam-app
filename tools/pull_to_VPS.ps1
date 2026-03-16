@@ -239,6 +239,9 @@ foreach ($entry in $replacements.GetEnumerator()) {
     $remoteScript = $remoteScript.Replace($entry.Key, $entry.Value)
 }
 
+# Normalize to LF before sending to the Linux host.
+$remoteScript = $remoteScript -replace "`r`n", "`n"
+
 if ($dryRun) {
     Write-Host "[LOCAL] SSH target: $hostName"
     Write-Host "[LOCAL] Key: $keyPath"
