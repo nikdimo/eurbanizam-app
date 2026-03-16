@@ -5,12 +5,12 @@ if "%PROJECT_ROOT:~-1%"=="\" set "PROJECT_ROOT=%PROJECT_ROOT:~0,-1%"
 
 set "READ_ANY=0"
 for %%F in (
+  "README.md"
+  "ARCHITECTURE_SUMMARY.md"
   "docs\00_PROJECT_SPECS.md"
   "docs\01_PATH_CONTRACT.md"
   "docs\02_OPERATIONS.md"
   "docs\03_PHONE_POLICY.md"
-  "docs\financial_records.md"
-  "docs\RECAP.md"
 ) do (
   if exist "%PROJECT_ROOT%\%%~F" (
     set "READ_ANY=1"

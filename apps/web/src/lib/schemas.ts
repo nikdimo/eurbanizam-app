@@ -359,3 +359,15 @@ export const JobActionResultSchema = z.object({
 });
 
 export type JobActionResult = z.infer<typeof JobActionResultSchema>;
+
+export const PinStatusSchema = z.object({
+  has_pin: z.boolean().default(false),
+});
+
+export type PinStatus = z.infer<typeof PinStatusSchema>;
+
+export const PinVerifyResultSchema = z.object({
+  verified: z.literal(true),
+});
+
+export type PinVerifyResult = z.infer<typeof PinVerifyResultSchema>;

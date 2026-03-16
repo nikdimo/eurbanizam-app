@@ -1,15 +1,15 @@
-# VPS Notes
+﻿# VPS Notes
 
 Expected Linux paths:
 
-- repo: `/home/nikola/eurbanizam-app`
-- runtime: `/home/nikola/.eurbanizam`
-- secrets env: `/home/nikola/.eurbanizam/secrets/.eurbanizam_secrets.env`
+- repo: `/home/niki/eurbanizam-app`
+- runtime: `/home/niki/.eurbanizam`
+- secrets env: `/home/niki/.eurbanizam/secrets/.eurbanizam_secrets.env`
 
 Suggested deploy sequence:
 
 ```bash
-cd /home/nikola
+cd /home/niki
 git clone https://github.com/nikdimo/eurbanizam-app.git
 cd eurbanizam-app
 python3 -m venv .venv
@@ -24,8 +24,8 @@ npm run build
 Install services:
 
 ```bash
-sudo cp /home/nikola/eurbanizam-app/deploy/vps/eurbanizam-api.service /etc/systemd/system/
-sudo cp /home/nikola/eurbanizam-app/deploy/vps/eurbanizam-web.service /etc/systemd/system/
+sudo cp /home/niki/eurbanizam-app/deploy/vps/eurbanizam-api.service /etc/systemd/system/
+sudo cp /home/niki/eurbanizam-app/deploy/vps/eurbanizam-web.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now eurbanizam-api.service eurbanizam-web.service
 ```
@@ -33,10 +33,8 @@ sudo systemctl enable --now eurbanizam-api.service eurbanizam-web.service
 Nginx:
 
 ```bash
-sudo cp /home/nikola/eurbanizam-app/deploy/vps/nginx-eurbanizam-app.conf /etc/nginx/sites-available/eurbanizam-app
+sudo cp /home/niki/eurbanizam-app/deploy/vps/nginx-eurbanizam-app.conf /etc/nginx/sites-available/eurbanizam-app
 sudo ln -sf /etc/nginx/sites-available/eurbanizam-app /etc/nginx/sites-enabled/eurbanizam-app
 sudo nginx -t
 sudo systemctl reload nginx
 ```
-
-Before starting email features, restore real SMTP values into `finance_settings.json` on the VPS.

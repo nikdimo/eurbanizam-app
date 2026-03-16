@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import compileall
@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,7 +21,6 @@ def _bin(name: str) -> str:
 def run_python_checks() -> bool:
     print("== Python compile checks ==")
     targets = [
-        ROOT / "admin.py",
         ROOT / "apps" / "api",
         ROOT / "tools",
     ]

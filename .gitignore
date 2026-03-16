@@ -1,12 +1,18 @@
-﻿# Runtime data
+.venv/
 .eurbanizam/
-
-# Backups
-bak/
+*.egg-info/
 
 # Python cache
 __pycache__/
 *.pyc
+
+# Backups
+bak/
+
+# Web build/runtime
+node_modules/
+.next/
+out/
 
 # Logs and temp
 *.log
@@ -17,10 +23,16 @@ __pycache__/
 *.sqlite
 *.db
 
+# Local sync temp
+.tmp.driveupload/
+.tmp.drivedownload/
+
 # OS / editor
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
+
+# Local settings
 settings.json
 settings.local.json

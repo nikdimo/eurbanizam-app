@@ -26,7 +26,12 @@ from ..schemas.finance import (
     SendInvoiceEmailPayload,
 )
 
-FIXED_CASE_FIELD_NAMES = ("address",)
+FIXED_CASE_FIELD_NAMES = (
+    "address",
+    "email",
+    "alternate_emails",
+    "Name / Last name",
+)
 
 
 @dataclass
@@ -124,6 +129,16 @@ class FinanceService:
                     case_id=case_id,
                     updates=case_updates,
                 )
+            sync_profile_updates = {}
+            if "phone" in updates:
+                sync_profile_updates["client_phone"] = updates.get("phone")
+            if isinstance(updates.get("custom_fields"), dict):
+                if "Name / Last name" in updates["custom_fields"]:
+                    sync_profile_updates["client_name"] = updates["custom_fields"].get(
+                        "Name / Last name"
+                    )
+            if sync_profile_updates:
+                finance_cases.upsert_finance_profile(conn, case_id, sync_profile_updates)
 
             detail = finance_cases.get_finance_case_detail_dict(
                 conn,

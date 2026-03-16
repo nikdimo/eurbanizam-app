@@ -43,6 +43,8 @@ import { ErrorState, LoadingState } from "@/components/ui/states";
 import { StatCard } from "@/components/ui/stat-card";
 import { Textarea } from "@/components/ui/textarea";
 import { apiClient } from "@/lib/api/client";
+import { PinGate } from "@/components/ui/pin-gate";
+import { useFinancePinGate } from "@/lib/hooks/use-finance-pin-gate";
 import {
   FinanceSettings,
   FinanceSettingsSchema,
@@ -185,6 +187,65 @@ const WEEKDAY_OPTIONS = [
   { value: "6", label: "Saturday" },
 ];
 
+const ONE_SHOT_JOBS = new Set([
+  "smart_sync",
+  "full_scrape",
+  "report",
+  "healthcheck",
+  "project_checks",
+]);
+
+const TEMPLATE_PLACEHOLDERS = [
+  "{invoice_number}",
+  "{case_id}",
+  "{amount}",
+  "{currency}",
+  "{issue_date}",
+  "{due_date}",
+  "{client_name}",
+  "{client_email}",
+  "{service_description}",
+  "{company_name}",
+  "{company_email}",
+  "{company_phone}",
+];
+
+const RECOMMENDED_INVOICE_SUBJECT_TEMPLATE =
+  "Invoice {invoice_number} for case {case_id}";
+
+const RECOMMENDED_INVOICE_BODY_TEMPLATE = `Hello {client_name},
+
+Please find attached invoice {invoice_number} for case {case_id}.
+
+Service: {service_description}
+Amount due: {amount} {currency}
+Issue date: {issue_date}
+Due date: {due_date}
+
+If you have any questions, reply to this email and we will help you.
+
+Best regards,
+{company_name}
+{company_email}
+{company_phone}`;
+
+const RECOMMENDED_REMINDER_SUBJECT_TEMPLATE =
+  "Reminder: invoice {invoice_number} for case {case_id}";
+
+const RECOMMENDED_REMINDER_BODY_TEMPLATE = `Hello {client_name},
+
+This is a reminder that invoice {invoice_number} for case {case_id} is still awaiting payment.
+
+Outstanding amount: {amount} {currency}
+Due date: {due_date}
+
+If the payment has already been sent, please ignore this reminder. Otherwise, let us know if you need any clarification before payment.
+
+Best regards,
+{company_name}
+{company_email}
+{company_phone}`;
+
 function buildProjectDraft(state?: ProjectManagementState | null): ProjectDraft {
   if (!state) {
     return DEFAULT_PROJECT_DRAFT;
@@ -261,18 +322,105 @@ function buildFinanceDraft(settings?: FinanceSettings | null): FinanceDraft {
     smtp_from_email: String(settings?.smtp_from_email ?? ""),
     smtp_bcc: String(settings?.smtp_bcc ?? ""),
     default_currency: String(settings?.default_currency ?? ""),
-    invoice_email_subject_template: String(
-      settings?.invoice_email_subject_template ?? "",
-    ),
-    invoice_email_body_template: String(
-      settings?.invoice_email_body_template ?? "",
-    ),
-    reminder_email_subject_template: String(
-      settings?.reminder_email_subject_template ?? "",
-    ),
-    reminder_email_body_template: String(
-      settings?.reminder_email_body_template ?? "",
-    ),
+    invoice_email_subject_template:
+      String(settings?.invoice_email_subject_template ?? "").trim() ||
+      RECOMMENDED_INVOICE_SUBJECT_TEMPLATE,
+    invoice_email_body_template:
+      String(settings?.invoice_email_body_template ?? "").trim() ||
+      RECOMMENDED_INVOICE_BODY_TEMPLATE,
+    reminder_email_subject_template:
+      String(settings?.reminder_email_subject_template ?? "").trim() ||
+      RECOMMENDED_REMINDER_SUBJECT_TEMPLATE,
+    reminder_email_body_template:
+      String(settings?.reminder_email_body_template ?? "").trim() ||
+      RECOMMENDED_REMINDER_BODY_TEMPLATE,
+  };
+}
+
+function isManualHost(state: ProjectManagementState): boolean {
+  return !state.runtime.systemctl_available && !state.scheduler.available;
+}
+
+function getHealthPresentation(state: ProjectManagementState): {
+  label: string;
+  hint: string;
+  tone: NoticeTone;
+} {
+  if (isManualHost(state)) {
+    return {
+      label: "Manual host",
+      hint: state.health.updated_at
+        ? `Local workspace. Last imported or server-side check ${formatDate(state.health.updated_at)}. Live service health is tracked on the VPS.`
+        : "Local workspace. Runtime files and credentials are checked here, but live service health is tracked on the VPS.",
+      tone: "info",
+    };
+  }
+
+  const normalized = String(state.health.status ?? "").trim().toLowerCase();
+  if (!normalized) {
+    return {
+      label: "Awaiting check",
+      hint: "No healthcheck result has been recorded on this host yet.",
+      tone: "info",
+    };
+  }
+  if (normalized === "healthy") {
+    return {
+      label: "Healthy",
+      hint: `Last check ${formatDate(state.health.updated_at)}.`,
+      tone: "success",
+    };
+  }
+  if (normalized === "unhealthy") {
+    return {
+      label: "Needs attention",
+      hint: `Last check ${formatDate(state.health.updated_at)}.`,
+      tone: "error",
+    };
+  }
+  return {
+    label: state.health.status ?? "Unknown",
+    hint: `Last check ${formatDate(state.health.updated_at)}.`,
+    tone: statusTone(state.health.status),
+  };
+}
+
+function getProcessPresentation(
+  state: ProjectManagementState,
+  process: ProjectManagementState["processes"][number],
+): {
+  label: string;
+  tone: NoticeTone;
+  detail: string;
+} {
+  if (process.running) {
+    return {
+      label: "Running",
+      tone: "success",
+      detail: process.started_at
+        ? `Started ${formatDate(process.started_at)}`
+        : "Background job is active on this host.",
+    };
+  }
+  if (ONE_SHOT_JOBS.has(process.job)) {
+    return {
+      label: "Idle",
+      tone: "info",
+      detail: "On-demand job. It starts when triggered and exits after the run completes.",
+    };
+  }
+  if (isManualHost(state)) {
+    return {
+      label: "Manual",
+      tone: "info",
+      detail:
+        "This host does not auto-manage long-running services. Start it here only when you want the local machine to own that workload.",
+    };
+  }
+  return {
+    label: "Stopped",
+    tone: "info",
+    detail: "Long-running job is not active on this host right now.",
   };
 }
 
@@ -301,7 +449,20 @@ function statusTone(value: string | null | undefined): NoticeTone {
   if (["ok", "healthy", "ready", "running", "applied", "enabled", "finished"].includes(normalized)) {
     return "success";
   }
-  if (["warning", "stale", "missing", "manual", "never", "disabled"].includes(normalized)) {
+  if (
+    [
+      "warning",
+      "stale",
+      "missing",
+      "manual",
+      "idle",
+      "never",
+      "disabled",
+      "stopped",
+      "awaiting check",
+      "unknown",
+    ].includes(normalized)
+  ) {
     return "info";
   }
   return "error";
@@ -374,10 +535,18 @@ function StatusRow({
   label,
   ok,
   detail,
+  okLabel = "Ready",
+  fallbackLabel = "Missing",
+  okTone = "success",
+  fallbackTone = "error",
 }: {
   label: string;
   ok: boolean;
   detail?: string;
+  okLabel?: string;
+  fallbackLabel?: string;
+  okTone?: NoticeTone;
+  fallbackTone?: NoticeTone;
 }) {
   return (
     <div className="flex items-start justify-between gap-4 rounded-xl border border-border/60 bg-background/70 px-3 py-2">
@@ -385,7 +554,10 @@ function StatusRow({
         <p className="text-sm font-medium text-foreground">{label}</p>
         {detail ? <p className="text-xs text-muted-foreground">{detail}</p> : null}
       </div>
-      <StatusPill label={ok ? "Ready" : "Missing"} tone={ok ? "success" : "error"} />
+      <StatusPill
+        label={ok ? okLabel : fallbackLabel}
+        tone={ok ? okTone : fallbackTone}
+      />
     </div>
   );
 }
@@ -449,6 +621,7 @@ export default function SettingsPage() {
   const [financeNotice, setFinanceNotice] = React.useState<Notice>(null);
   const [opsNotice, setOpsNotice] = React.useState<Notice>(null);
   const [, startTransition] = React.useTransition();
+  const pinGate = useFinancePinGate();
 
   const loadData = React.useCallback(async (options?: { silent?: boolean }) => {
     if (!options?.silent) {
@@ -482,8 +655,16 @@ export default function SettingsPage() {
   }, []);
 
   React.useEffect(() => {
+    if (pinGate.pinRequired === null) {
+      return;
+    }
+
+    if (pinGate.pinRequired && !pinGate.unlocked) {
+      return;
+    }
+
     void loadData();
-  }, [loadData]);
+  }, [loadData, pinGate.pinRequired, pinGate.unlocked]);
 
   const handleSaveProject = async () => {
     setProjectSaving(true);
@@ -673,6 +854,41 @@ export default function SettingsPage() {
     await loadData({ silent: true });
   };
 
+  if (pinGate.statusError) {
+    return (
+      <PageContainer className="overflow-auto">
+        <ErrorState
+          message={pinGate.statusError}
+          onRetry={() => window.location.reload()}
+        />
+      </PageContainer>
+    );
+  }
+
+  if (pinGate.pinRequired === null) {
+    return (
+      <PageContainer className="overflow-auto">
+        <LoadingState label="Checking finance PIN requirement..." />
+      </PageContainer>
+    );
+  }
+
+  if (pinGate.pinRequired && !pinGate.unlocked) {
+    return (
+      <PageContainer className="overflow-auto">
+        <PinGate
+          title="Protected Settings"
+          description="Enter the finance PIN to unlock this page."
+          helperText="If you need to reset the PIN, edit the finance_pin value in settings.json."
+          busy={pinGate.verifying}
+          error={pinGate.verifyError}
+          buttonLabel="Unlock settings"
+          onSubmit={(pin) => void pinGate.verifyPin(pin)}
+        />
+      </PageContainer>
+    );
+  }
+
   if (loading) {
     return (
       <PageContainer className="overflow-auto">
@@ -698,7 +914,18 @@ export default function SettingsPage() {
       ? "Applied"
       : "Pending"
     : "Manual";
-  const healthState = managementState.health.status || "Unknown";
+  const healthPresentation = getHealthPresentation(managementState);
+  const manualHost = isManualHost(managementState);
+
+  const applyRecommendedTemplates = () => {
+    setFinanceDraft((current) => ({
+      ...current,
+      invoice_email_subject_template: RECOMMENDED_INVOICE_SUBJECT_TEMPLATE,
+      invoice_email_body_template: RECOMMENDED_INVOICE_BODY_TEMPLATE,
+      reminder_email_subject_template: RECOMMENDED_REMINDER_SUBJECT_TEMPLATE,
+      reminder_email_body_template: RECOMMENDED_REMINDER_BODY_TEMPLATE,
+    }));
+  };
 
   return (
     <PageContainer className="overflow-auto bg-[radial-gradient(circle_at_top_left,rgba(34,197,94,0.06),transparent_28%),radial-gradient(circle_at_top_right,rgba(59,130,246,0.08),transparent_24%)]">
@@ -740,8 +967,8 @@ export default function SettingsPage() {
           />
           <StatCard
             label="Health"
-            value={healthState}
-            hint={`Last update ${formatDate(managementState.health.updated_at)}`}
+            value={healthPresentation.label}
+            hint={healthPresentation.hint}
           />
           <StatCard
             label="Processes"
@@ -1320,10 +1547,18 @@ export default function SettingsPage() {
 
             <Card className="border-border/70 bg-background/90">
               <CardHeader>
-                <CardTitle>Operations</CardTitle>
-                <CardDescription>
-                  Trigger scrapers, reports, health checks, tests, and bot controls without leaving the app.
-                </CardDescription>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <CardTitle>Operations</CardTitle>
+                    <CardDescription>
+                      Trigger scrapers, reports, health checks, tests, and bot controls without leaving the app.
+                    </CardDescription>
+                  </div>
+                  <StatusPill
+                    label={manualHost ? "Local workspace" : "Managed host"}
+                    tone="info"
+                  />
+                </div>
               </CardHeader>
               <CardContent className="space-y-5">
                 <NoticeMessage notice={opsNotice} />
@@ -1444,25 +1679,33 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="space-y-2 rounded-2xl border border-border/60 bg-muted/30 p-4">
+                  <p className="text-xs text-muted-foreground">
+                    Background services stay running. Syncs, reports, checks, and
+                    previews are normally idle between runs.
+                  </p>
                   {managementState.processes.map((process) => (
-                    <div
-                      key={process.job}
-                      className="rounded-xl border border-border/60 bg-background/80 px-3 py-3"
-                    >
+                    (() => {
+                      const presentation = getProcessPresentation(
+                        managementState,
+                        process,
+                      );
+                      return (
+                        <div
+                          key={process.job}
+                          className="rounded-xl border border-border/60 bg-background/80 px-3 py-3"
+                        >
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="text-sm font-medium text-foreground">
                             {process.label}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {process.started_at
-                              ? `Started ${formatDate(process.started_at)}`
-                              : "Not running"}
+                            {presentation.detail}
                           </p>
                         </div>
                         <StatusPill
-                          label={process.running ? "Running" : "Stopped"}
-                          tone={process.running ? "success" : "info"}
+                          label={presentation.label}
+                          tone={presentation.tone}
                         />
                       </div>
                       {process.command ? (
@@ -1470,7 +1713,9 @@ export default function SettingsPage() {
                           {process.command}
                         </p>
                       ) : null}
-                    </div>
+                        </div>
+                      );
+                    })()
                   ))}
                 </div>
               </CardContent>
@@ -1480,10 +1725,21 @@ export default function SettingsPage() {
           <div className="space-y-6">
             <Card className="border-border/70 bg-background/90">
               <CardHeader>
-                <CardTitle>Finance and Communication</CardTitle>
-                <CardDescription>
-                  Reusable company identity, SMTP, and message templates used across invoices and reminders.
-                </CardDescription>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <CardTitle>Finance and Communication</CardTitle>
+                    <CardDescription>
+                      Reusable company identity, SMTP, and message templates used across invoices and reminders.
+                    </CardDescription>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={applyRecommendedTemplates}
+                  >
+                    Use Recommended Copy
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="space-y-5">
                 <NoticeMessage notice={financeNotice} />
@@ -1689,9 +1945,25 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="grid gap-4">
+                  <div className="rounded-2xl border border-border/60 bg-muted/30 p-4">
+                    <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                      Template Placeholders
+                    </p>
+                    <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                      These values are available in both the settings page and the
+                      finance workspace message composer.
+                    </p>
+                    <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                      Recommended copy is prefilled here for convenience. Save
+                      finance settings to make the templates live.
+                    </p>
+                    <p className="mt-3 rounded-xl bg-background/80 px-3 py-2 font-mono text-[11px] text-muted-foreground">
+                      {TEMPLATE_PLACEHOLDERS.join(" ")}
+                    </p>
+                  </div>
                   <SettingField
                     label="Invoice Subject Template"
-                    hint="Available placeholders: {invoice_number}, {case_id}, {amount}, {currency}, {due_date}, {client_name}"
+                    hint="Used by both draft previews and live invoice sends."
                   >
                     <Input
                       value={financeDraft.invoice_email_subject_template}
@@ -1705,7 +1977,7 @@ export default function SettingsPage() {
                   </SettingField>
                   <SettingField label="Invoice Body Template">
                     <Textarea
-                      rows={5}
+                      rows={8}
                       value={financeDraft.invoice_email_body_template}
                       onChange={(event) =>
                         setFinanceDraft((current) => ({
@@ -1728,7 +2000,7 @@ export default function SettingsPage() {
                   </SettingField>
                   <SettingField label="Reminder Body Template">
                     <Textarea
-                      rows={5}
+                      rows={8}
                       value={financeDraft.reminder_email_body_template}
                       onChange={(event) =>
                         setFinanceDraft((current) => ({
@@ -1761,6 +2033,23 @@ export default function SettingsPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div className="rounded-2xl border border-border/60 bg-muted/30 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-foreground">
+                        Monitoring Status
+                      </p>
+                      <p className="text-xs leading-5 text-muted-foreground">
+                        {healthPresentation.hint}
+                      </p>
+                    </div>
+                    <StatusPill
+                      label={healthPresentation.label}
+                      tone={healthPresentation.tone}
+                    />
+                  </div>
+                </div>
+
                 <div className="grid gap-2">
                   <StatusRow
                     label="Portal credentials"
@@ -1797,11 +2086,26 @@ export default function SettingsPage() {
                     label="Cron availability"
                     ok={managementState.runtime.cron_available}
                     detail="Required for automatic schedules on Linux hosts."
+                    fallbackLabel={
+                      manualHost ? "Not on this host" : "Unavailable"
+                    }
+                    fallbackTone="info"
+                  />
+                  <StatusRow
+                    label="System service control"
+                    ok={managementState.runtime.systemctl_available}
+                    detail="Used on Linux servers to check and control API, web, and bot services."
+                    fallbackLabel={
+                      manualHost ? "Manual host" : "Unavailable"
+                    }
+                    fallbackTone="info"
                   />
                   <StatusRow
                     label="wkhtmltopdf"
                     ok={managementState.runtime.wkhtmltopdf_available}
                     detail="Needed for PDF invoice attachments."
+                    fallbackLabel="Optional"
+                    fallbackTone="info"
                   />
                   <StatusRow
                     label="Node.js tooling"
@@ -1821,6 +2125,14 @@ export default function SettingsPage() {
                     </h3>
                   </div>
                   <div className="mt-3 space-y-2 text-xs text-muted-foreground">
+                    <p>
+                      <span className="font-medium text-foreground">Host Role:</span>{" "}
+                      {manualHost
+                        ? "Local workspace / manual host"
+                        : managementState.runtime.systemctl_available
+                          ? "Managed Linux host"
+                          : "Custom host"}
+                    </p>
                     <p>
                       <span className="font-medium text-foreground">Platform:</span>{" "}
                       {managementState.runtime.platform}
@@ -1894,7 +2206,7 @@ export default function SettingsPage() {
                           {run.job.replace(/_/g, " ")}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          Started {formatDate(run.started_at)} · Finished {formatDate(run.finished_at)}
+                          Started {formatDate(run.started_at)} | Finished {formatDate(run.finished_at)}
                         </p>
                       </div>
                       <StatusPill

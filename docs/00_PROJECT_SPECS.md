@@ -1,14 +1,15 @@
-﻿# E-Urbanizam Tracker (Codex v2) — Project Specs
+﻿# Project Specs
 
 ## Goal
-- Daily detection of NEW/CHANGED cases via LIST PROBE
-- Detail scrape ONLY for changed/new cases
-- Canonical data in SQLite (local on C:)
-- Per-case JSON snapshots (local on C:)
-- Admin UI (Streamlit) reads/writes ONLY local DB
-- Later: Telegram alerts + Email digest
+
+- Provide a web-based operator workspace for cases, finance, and settings.
+- Keep the frontend in Next.js and the backend in FastAPI.
+- Store runtime data outside the repo under the configured runtime root.
+- Support automation scripts for sync, reports, healthchecks, and Telegram bot tasks.
 
 ## Non-negotiables
-- Never run SQLite directly in a cloud-synced folder (Google Drive).
-- Multi-PC safety: Pull → Work (local only) → Push boundary.
-- Phone numbers are manual/PII and must never be stored in JSON.
+
+- Do not keep runtime SQLite data inside cloud-synced repo folders.
+- Keep secrets outside the repo.
+- Treat the API and web app as the only supported UI stack.
+- Keep deployment templates aligned with the live VPS layout.

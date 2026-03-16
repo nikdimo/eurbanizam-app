@@ -7,16 +7,24 @@ from typing import Optional
 from .settings_access import load_finance_settings
 
 
+def _clean_str(value: object) -> str:
+    return str(value or "").strip()
+
+
 def get_smtp_settings() -> dict:
     settings = load_finance_settings()
+    host = _clean_str(settings.get("smtp_host")) or "smtp.gmail.com"
+    from_email = _clean_str(settings.get("smtp_from_email")) or _clean_str(
+        settings.get("company_email")
+    )
     return {
-        "host": settings.get("smtp_host", "smtp.gmail.com"),
+        "host": host,
         "port": int(settings.get("smtp_port", 587) or 587),
-        "username": settings.get("smtp_username", ""),
-        "password": settings.get("smtp_password", ""),
+        "username": _clean_str(settings.get("smtp_username")),
+        "password": str(settings.get("smtp_password") or ""),
         "use_tls": bool(settings.get("smtp_use_tls", True)),
-        "from_email": settings.get("smtp_from_email", settings.get("company_email", "")),
-        "bcc": settings.get("smtp_bcc", ""),
+        "from_email": from_email,
+        "bcc": _clean_str(settings.get("smtp_bcc")),
     }
 
 
@@ -83,6 +91,12 @@ def send_email_simple(
             if smtp["username"]:
                 server.login(smtp["username"], smtp["password"])
             server.send_message(msg)
+    except smtplib.SMTPAuthenticationError:
+        return "SMTP authentication failed. Check the username, password, or app password."
+    except smtplib.SMTPException as exc:
+        return f"SMTP error: {exc}"
+    except OSError as exc:
+        return f"SMTP connection failed: {exc}"
     except Exception as exc:
         return str(exc)
     return None

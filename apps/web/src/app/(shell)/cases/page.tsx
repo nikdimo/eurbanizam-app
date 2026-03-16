@@ -637,7 +637,12 @@ function makeFallbackFieldDefinition(name: string): CaseCustomFieldDefinition {
 }
 
 function isFixedCaseField(name: string): boolean {
-  return name.trim().toLowerCase() === "address";
+  const normalized = name.trim().toLowerCase();
+  return (
+    normalized === "address" ||
+    normalized === "email" ||
+    normalized === "name / last name"
+  );
 }
 
 function withFixedCaseFieldDefinitions(
@@ -660,7 +665,42 @@ function withFixedCaseFieldDefinitions(
 }
 
 function getCaseFieldLabel(name: string): string {
-  return isFixedCaseField(name) ? "Address" : name;
+  const normalized = name.trim().toLowerCase();
+  if (normalized === "address") {
+    return "Address";
+  }
+  if (normalized === "email") {
+    return "Email";
+  }
+  if (normalized === "name / last name") {
+    return "Client Name";
+  }
+  return name;
+}
+
+function splitMultiValueText(value?: string | null): string[] {
+  return String(value ?? "")
+    .split(/[\n,;]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function mergeUniqueValues(values: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const raw of values) {
+    const value = String(raw ?? "").trim();
+    if (!value) {
+      continue;
+    }
+    const key = value.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    result.push(value);
+  }
+  return result;
 }
 
 function resolveFieldDefinitions(
@@ -1596,6 +1636,81 @@ export default function CasesPage() {
         },
       },
       {
+        id: "client_name",
+        accessorFn: (row) => row.custom_fields?.["Name / Last name"] ?? "",
+        header: "Client Name",
+        cell: ({ row }) => {
+          const item = row.original;
+          const key = buildInlineStateKey(item.case_id, "custom:Name / Last name");
+          return (
+            <InlineEditableInput
+              value={item.custom_fields?.["Name / Last name"] ?? ""}
+              placeholder="Client name"
+              onSave={(nextValue) =>
+                handleInlineSave(item.case_id, "custom:Name / Last name", {
+                  custom_fields: {
+                    "Name / Last name": normalizeEditableValue(nextValue),
+                  },
+                })
+              }
+              isSaving={Boolean(inlineSaving[key])}
+              error={inlineErrors[key]}
+            />
+          );
+        },
+      },
+      {
+        id: "email",
+        accessorFn: (row) => row.custom_fields?.email ?? "",
+        header: "Email",
+        meta: { className: "min-w-[16rem]" },
+        cell: ({ row }) => {
+          const item = row.original;
+          const fieldKey = "custom:email";
+          const key = buildInlineStateKey(item.case_id, fieldKey);
+          const value = item.custom_fields?.email ?? "";
+          const options = mergeUniqueValues([
+            value,
+            ...splitMultiValueText(item.custom_fields?.alternate_emails),
+          ]);
+
+          if (options.length > 1) {
+            return (
+              <InlineEditableSelect
+                value={value}
+                placeholder="Email"
+                options={options}
+                onSave={(nextValue) =>
+                  handleInlineSave(item.case_id, fieldKey, {
+                    custom_fields: {
+                      email: normalizeEditableValue(nextValue),
+                    },
+                  })
+                }
+                isSaving={Boolean(inlineSaving[key])}
+                error={inlineErrors[key]}
+              />
+            );
+          }
+
+          return (
+            <InlineEditableInput
+              value={value}
+              placeholder="Email"
+              onSave={(nextValue) =>
+                handleInlineSave(item.case_id, fieldKey, {
+                  custom_fields: {
+                    email: normalizeEditableValue(nextValue),
+                  },
+                })
+              }
+              isSaving={Boolean(inlineSaving[key])}
+              error={inlineErrors[key]}
+            />
+          );
+        },
+      },
+      {
         accessorKey: "phone",
         header: "Phone",
         cell: ({ row }) => {
@@ -1620,7 +1735,6 @@ export default function CasesPage() {
         id: "address",
         accessorFn: (row) => row.custom_fields?.address ?? "",
         header: "Address",
-        enableHiding: false,
         meta: { className: "min-w-[16rem]" },
         cell: ({ row }) => {
           const item = row.original;

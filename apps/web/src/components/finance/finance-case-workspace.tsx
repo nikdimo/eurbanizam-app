@@ -48,6 +48,8 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { apiClient, API_BASE } from "@/lib/api/client";
 import {
+  CaseCustomFieldDefinition,
+  CaseCustomFieldDefinitionSchema,
   FinanceCaseDetail,
   FinanceCaseDetailSchema,
   FinanceSettings,
@@ -157,6 +159,14 @@ type MailResult = {
   pdf_generated?: boolean;
   reminder_sequence?: number | null;
 };
+
+const FIXED_PROFILE_CUSTOM_FIELDS = new Set([
+  "Name / Last name",
+  "email",
+  "address",
+  "alternate_emails",
+  "company",
+]);
 
 type TimelineBadge = {
   label: string;
@@ -344,10 +354,9 @@ function getPreferredName(
 ): string {
   return (
     mergeUniqueValues([
+      getCustomFieldValue(detail, "Name / Last name"),
       invoice?.client_name,
       detail.client_name,
-      getCustomFieldValue(detail, "Name / Last name"),
-      detail.title,
     ])[0] ?? ""
   );
 }
@@ -473,9 +482,10 @@ function defaultReminderBody(
 }
 
 function buildProfileDraft(detail: FinanceCaseDetail): ProfileDraft {
+  const sharedPhone = String(detail.phone ?? detail.client_phone ?? "");
   return {
-    client_name: String(detail.client_name ?? ""),
-    client_phone: String(detail.client_phone ?? ""),
+    client_name: getPreferredName(detail),
+    client_phone: sharedPhone,
     service_type: String(detail.service_type ?? ""),
     finance_date: String(detail.finance_date ?? ""),
     contract_sum: String(detail.contract_sum ?? 0),
@@ -508,13 +518,13 @@ function buildContactDraft(detail: FinanceCaseDetail): ContactDraft {
   }
   if (
     !Object.prototype.hasOwnProperty.call(customFields, "Name / Last name") &&
-    detail.client_name
+    getPreferredName(detail)
   ) {
-    customFields["Name / Last name"] = detail.client_name;
+    customFields["Name / Last name"] = getPreferredName(detail);
   }
 
   return {
-    phone: String(detail.phone ?? ""),
+    phone: String(detail.phone ?? detail.client_phone ?? ""),
     customFields,
   };
 }
@@ -1163,6 +1173,9 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
   const [settingsDraft, setSettingsDraft] = React.useState<SettingsDraft>(
     buildSettingsDraft(null),
   );
+  const [caseFieldDefinitions, setCaseFieldDefinitions] = React.useState<
+    CaseCustomFieldDefinition[]
+  >([]);
   const [selectedInvoiceId, setSelectedInvoiceId] = React.useState<number | null>(
     null,
   );
@@ -1184,6 +1197,8 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
   >(null);
   const [editingRecipientLabel, setEditingRecipientLabel] =
     React.useState<string>("");
+  const [highlightDraft, setHighlightDraft] = React.useState(false);
+  const draftFormRef = React.useRef<HTMLDivElement | null>(null);
 
   const selectedInvoice =
     data?.invoices.find((invoice) => invoice.invoice_id === selectedInvoiceId) ??
@@ -1208,13 +1223,16 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
     : [];
   const needsReminder =
     overdueInvoices.find((invoice) => !isInvoiceClosed(invoice)) ?? null;
+  const hasAnyFinanceActivity =
+    !!data && (data.invoices.length > 0 || data.payments.length > 0);
 
   React.useEffect(() => {
     async function loadWorkspace() {
       setIsLoading(true);
       setError(null);
 
-      const [detailResponse, settingsResponse] = await Promise.all([
+      const [detailResponse, settingsResponse, fieldDefinitionsResponse] =
+        await Promise.all([
         apiClient.getParsed(
           `/api/finance/cases/${caseId}`,
           FinanceCaseDetailSchema,
@@ -1222,6 +1240,10 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
         apiClient.getParsed("/api/finance/settings", FinanceSettingsSchema, {
           cache: "force-cache",
         }),
+        apiClient.getParsed(
+          "/api/custom-fields?scope=case",
+          CaseCustomFieldDefinitionSchema.array(),
+        ),
       ]);
 
       if (detailResponse.error || !detailResponse.data) {
@@ -1233,9 +1255,11 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
 
       const loadedDetail = detailResponse.data;
       const loadedSettings = settingsResponse.data ?? {};
+      const loadedCaseFieldDefinitions = fieldDefinitionsResponse.data ?? [];
       const initialInvoice = loadedDetail.invoices[0] ?? null;
       setData(loadedDetail);
       setSettings(loadedSettings);
+      setCaseFieldDefinitions(loadedCaseFieldDefinitions);
       setProfileDraft(buildProfileDraft(loadedDetail));
       setContactDraft(buildContactDraft(loadedDetail));
       setPaymentDraft(buildPaymentDraft(loadedDetail, loadedSettings));
@@ -1475,9 +1499,20 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
     }
 
     setBusyAction("save-profile");
+    const sharedClientName = profileDraft.client_name.trim();
+    const sharedPhone = profileDraft.client_phone.trim() || contactDraft.phone.trim();
+    const sharedCustomFields = {
+      ...contactDraft.customFields,
+      "Name / Last name": sharedClientName,
+      email: String(contactDraft.customFields.email ?? "").trim(),
+      address: String(contactDraft.customFields.address ?? "").trim(),
+    };
+
     const response = await apiClient.put<unknown>(
       `/api/finance/cases/${caseId}/profile`,
       {
+        client_name: sharedClientName || null,
+        client_phone: sharedPhone || null,
         service_type: profileDraft.service_type || null,
         finance_date: profileDraft.finance_date || null,
         contract_sum: contractSum,
@@ -1487,14 +1522,27 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
         notes: profileDraft.notes || null,
       },
     );
-    setBusyAction(null);
-
     if (response.error) {
+      setBusyAction(null);
       setNotice({ tone: "error", message: response.error });
       return;
     }
 
-    const parsed = FinanceCaseDetailSchema.safeParse(response.data);
+    const overviewResponse = await apiClient.patch<unknown>(
+      `/api/finance/cases/${caseId}/overview`,
+      {
+        phone: sharedPhone || null,
+        custom_fields: sharedCustomFields,
+      },
+    );
+    setBusyAction(null);
+
+    if (overviewResponse.error) {
+      setNotice({ tone: "error", message: overviewResponse.error });
+      return;
+    }
+
+    const parsed = FinanceCaseDetailSchema.safeParse(overviewResponse.data);
     if (!parsed.success) {
       setNotice({
         tone: "error",
@@ -1507,57 +1555,7 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
     setProfileDraft(buildProfileDraft(parsed.data));
     setContactDraft(buildContactDraft(parsed.data));
     setPaymentDraft(buildPaymentDraft(parsed.data, settings));
-    setNotice({ tone: "success", message: "Finance profile updated." });
-  }
-
-  async function handleClientSave(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setBusyAction("save-client");
-
-    const profileResponse = await apiClient.put<unknown>(
-      `/api/finance/cases/${caseId}/profile`,
-      {
-        client_name: profileDraft.client_name || null,
-        client_phone: profileDraft.client_phone || null,
-      },
-    );
-
-    if (profileResponse.error) {
-      setBusyAction(null);
-      setNotice({ tone: "error", message: profileResponse.error });
-      return;
-    }
-
-    const response = await apiClient.patch<unknown>(
-      `/api/finance/cases/${caseId}/overview`,
-      {
-        phone: contactDraft.phone || null,
-        custom_fields: contactDraft.customFields,
-      },
-    );
-    setBusyAction(null);
-
-    if (response.error) {
-      setNotice({ tone: "error", message: response.error });
-      return;
-    }
-
-    const parsed = FinanceCaseDetailSchema.safeParse(response.data);
-    if (!parsed.success) {
-      setNotice({
-        tone: "error",
-        message: "Client details saved, but the response could not be parsed.",
-      });
-      return;
-    }
-
-    setData(parsed.data);
-    setProfileDraft(buildProfileDraft(parsed.data));
-    setContactDraft(buildContactDraft(parsed.data));
-    setNotice({
-      tone: "success",
-      message: "Client information updated.",
-    });
+    setNotice({ tone: "success", message: "Contract profile updated." });
   }
 
   async function handlePaymentCreate(event: React.FormEvent<HTMLFormElement>) {
@@ -1702,6 +1700,40 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
       editingInvoiceId: nextInvoiceId ?? null,
     });
   }
+
+  const handleDraftFieldKeyDown = (
+    event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      event.currentTarget.form?.requestSubmit();
+    }
+  };
+
+  const scrollDraftIntoView = React.useCallback(
+    (nextMode: WorkbenchDraftMode = "invoice") => {
+      setDraftMode(nextMode);
+
+      if (typeof window === "undefined") {
+        return;
+      }
+
+      window.setTimeout(() => {
+        if (!draftFormRef.current) {
+          return;
+        }
+        draftFormRef.current.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+        setHighlightDraft(true);
+        window.setTimeout(() => {
+          setHighlightDraft(false);
+        }, 1200);
+      }, 0);
+    },
+    [],
+  );
 
   async function handleInvoiceDelete(invoice: FinanceInvoice) {
     if (
@@ -2430,7 +2462,7 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                 description="Defaults are seeded from outstanding balance and current case currency."
                 action={<BanknoteIcon className="size-5 text-muted-foreground" />}
               >
-                <form className="space-y-4" onSubmit={handlePaymentCreate}>
+                <form className="space-y-3" onSubmit={handlePaymentCreate}>
                   <Field label="Payment date">
                     <Input
                       type="date"
@@ -2443,7 +2475,7 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                       }
                     />
                   </Field>
-                  <Field label="Amount">
+                  <Field label="Amount" tone="compact">
                     <Input
                       inputMode="decimal"
                       value={paymentDraft.amount}
@@ -2674,6 +2706,7 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                     <Field label="Invoice number">
                       <Input
                         value={invoiceDraft.invoice_number}
+                        onKeyDown={handleDraftFieldKeyDown}
                         onChange={(event) =>
                           setInvoiceDraft((current) => ({
                             ...current,
@@ -2708,6 +2741,7 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                       <Input
                         type="date"
                         value={invoiceDraft.issue_date}
+                        onKeyDown={handleDraftFieldKeyDown}
                         onChange={(event) =>
                           setInvoiceDraft((current) => ({
                             ...current,
@@ -2720,6 +2754,7 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                       <Input
                         type="date"
                         value={invoiceDraft.due_date}
+                        onKeyDown={handleDraftFieldKeyDown}
                         onChange={(event) =>
                           setInvoiceDraft((current) => ({
                             ...current,
@@ -2976,7 +3011,8 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                 description="Drafts are hydrated from saved recipients, invoice data, and your stored templates."
               >
                 {selectedInvoice ? (
-                  <div className="space-y-4">
+            {hasAnyFinanceActivity ? (
+              <div className="space-y-4">
                     <div className="flex flex-wrap gap-2">
                       <Button
                         size="sm"
@@ -3230,6 +3266,7 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                         >
                           <p className="font-medium">
                             {mailResult.message ||
+                              mailResult.error ||
                               (mailResult.ok
                                 ? "Email action completed."
                                 : "Email action failed.")}
@@ -3726,11 +3763,11 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
   const companyValue = contactDraft.customFields.company ?? "";
   const addressValue = contactDraft.customFields.address ?? "";
   const alternateEmailsValue = contactDraft.customFields.alternate_emails ?? "";
+  const caseFieldDefinitionMap = new Map(
+    caseFieldDefinitions.map((definition) => [definition.name, definition]),
+  );
   const additionalMemoryFields = Object.entries(contactDraft.customFields)
-    .filter(
-      ([key]) =>
-        !["email", "company", "address", "alternate_emails"].includes(key),
-    )
+    .filter(([key]) => !FIXED_PROFILE_CUSTOM_FIELDS.has(key))
     .sort(([left], [right]) => left.localeCompare(right));
   const emailSuggestions = mergeUniqueValues([
     selectedInvoice?.client_email,
@@ -3821,154 +3858,171 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
       ) : null}
 
       <div className="border-b border-[#d8dde6] bg-[#fffdf8] px-6">
-        <div className="flex flex-wrap gap-2">
-          {WORKSPACE_TABS.map((tab) => (
-            <TabButton
-              key={tab.value}
-              active={activeTab === tab.value}
-              label={tab.label}
-              icon={tab.icon}
-              onClick={() => setActiveTab(tab.value)}
-            />
-          ))}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap gap-2">
+            {WORKSPACE_TABS.map((tab) => (
+              <TabButton
+                key={tab.value}
+                active={activeTab === tab.value}
+                label={tab.label}
+                icon={tab.icon}
+                onClick={() => setActiveTab(tab.value)}
+              />
+            ))}
+          </div>
+          {activeTab === "workbench" ? (
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                prepareNewInvoice(selectedInvoice);
+                scrollDraftIntoView("invoice");
+              }}
+            >
+              Create invoice / payment
+            </Button>
+          ) : null}
         </div>
       </div>
 
       {activeTab === "workbench" ? (
         <div className="space-y-5 px-6 pb-5">
-          <SectionCard
-            title="Invoice board"
-            description="Select an invoice to edit, or open it. Use View to see the invoice in your browser and print it as-is."
-            action={
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  onClick={() => prepareNewInvoice(selectedInvoice)}
-                >
-                  <FileTextIcon className="size-4" />
-                  New invoice
-                </Button>
-                {selectedInvoice ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => prepareExistingInvoice(selectedInvoice)}
-                  >
-                    <RefreshCwIcon className="size-4" />
-                    Edit selected
-                  </Button>
-                ) : null}
-              </div>
-            }
-          >
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Invoice</TableHead>
-                  <TableHead>Due</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="min-w-[80px] whitespace-nowrap">View</TableHead>
-                  <TableHead className="w-[1%] whitespace-nowrap" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.invoices.length ? (
-                  data.invoices.map((invoice) => (
-                    <TableRow
-                      key={invoice.invoice_id}
-                      data-state={
-                        selectedInvoiceId === invoice.invoice_id
-                          ? "selected"
-                          : undefined
-                      }
-                      className="cursor-pointer"
-                      onClick={() => {
-                        setSelectedInvoiceId(invoice.invoice_id);
-                        setEditingInvoiceId(invoice.invoice_id);
-                        setInvoiceDraft(buildExistingInvoiceDraft(invoice));
-                      }}
+          {hasAnyFinanceActivity ? (
+            <SectionCard
+              title="Invoice board"
+              description="Select an invoice to edit, or open it. Use View to see the invoice in your browser and print it as-is."
+              action={
+                <div className="flex flex-wrap gap-2">
+                  {selectedInvoice ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => prepareExistingInvoice(selectedInvoice)}
                     >
-                      <TableCell>
-                        <div className="space-y-1">
-                          <p className="font-medium">
-                            {invoice.invoice_number || `#${invoice.invoice_id}`}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            Issued {formatDate(invoice.issue_date)}
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="space-y-1">
-                          <p>{formatDate(invoice.due_date)}</p>
-                          {isInvoiceOverdue(invoice) ? (
-                            <p className="text-xs text-red-600">Overdue</p>
-                          ) : null}
-                        </div>
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        {formatMoney(invoice.amount, invoice.currency)}
-                      </TableCell>
-                      <TableCell>
-                        <StatusBadge status={invoice.status} />
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          asChild
-                          title="View invoice (print from browser)"
-                          className="gap-1.5"
-                        >
-                          <a
-                            href={`${API_BASE.replace(/\/$/, "")}/api/finance/invoices/${invoice.invoice_id}/html`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-onClick={(event) => event.stopPropagation()}
+                      <RefreshCwIcon className="size-4" />
+                      Edit selected
+                    </Button>
+                  ) : null}
+                </div>
+              }
+            >
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Invoice</TableHead>
+                    <TableHead>Due</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="min-w-[80px] whitespace-nowrap">View</TableHead>
+                    <TableHead className="w-[1%] whitespace-nowrap" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.invoices.length ? (
+                    data.invoices.map((invoice) => (
+                      <TableRow
+                        key={invoice.invoice_id}
+                        data-state={
+                          selectedInvoiceId === invoice.invoice_id
+                            ? "selected"
+                            : undefined
+                        }
+                        className="cursor-pointer"
+                        onClick={() => {
+                          setSelectedInvoiceId(invoice.invoice_id);
+                          setEditingInvoiceId(invoice.invoice_id);
+                          setInvoiceDraft(buildExistingInvoiceDraft(invoice));
+                        }}
+                      >
+                        <TableCell>
+                          <div className="space-y-1">
+                            <p className="font-medium">
+                              {invoice.invoice_number || `#${invoice.invoice_id}`}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Issued {formatDate(invoice.issue_date)}
+                            </p>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <p>{formatDate(invoice.due_date)}</p>
+                            {isInvoiceOverdue(invoice) ? (
+                              <p className="text-xs text-red-600">Overdue</p>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {formatMoney(invoice.amount, invoice.currency)}
+                        </TableCell>
+                        <TableCell>
+                          <StatusBadge status={invoice.status} />
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            asChild
+                            title="View invoice (print from browser)"
+                            className="gap-1.5"
+                          >
+                            <a
+                              href={`${API_BASE.replace(
+                                /\/$/,
+                                "",
+                              )}/api/finance/invoices/${invoice.invoice_id}/html`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(event) => event.stopPropagation()}
                             >
                               <FileTextIcon className="size-4 shrink-0" />
                               View
                             </a>
-                        </Button>
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          size="icon-sm"
-                          variant="ghost"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void handleInvoiceDelete(invoice);
-                          }}
-                          disabled={
-                            busyAction === `delete-invoice-${invoice.invoice_id}`
-                          }
-                        >
-                          <Trash2Icon className="size-4 text-red-600" />
-                          <span className="sr-only">Delete invoice</span>
-                        </Button>
+                          </Button>
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            size="icon-sm"
+                            variant="ghost"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void handleInvoiceDelete(invoice);
+                            }}
+                            disabled={
+                              busyAction === `delete-invoice-${invoice.invoice_id}`
+                            }
+                          >
+                            <Trash2Icon className="size-4 text-red-600" />
+                            <span className="sr-only">Delete invoice</span>
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell
+                        colSpan={6}
+                        className="py-6 text-center text-sm text-muted-foreground"
+                      >
+                        No invoices recorded yet.
                       </TableCell>
                     </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell
-                      colSpan={6}
-                      className="py-6 text-center text-sm text-muted-foreground"
-                    >
-                      No invoices recorded yet.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </SectionCard>
+                  )}
+                </TableBody>
+              </Table>
+            </SectionCard>
+          ) : null}
 
           <div
-            className="grid gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(520px,1fr)]"
+            className={cn(
+              "grid gap-5",
+              hasAnyFinanceActivity &&
+                "xl:grid-cols-[minmax(0,1.5fr)_minmax(520px,1fr)]",
+            )}
             data-timeline-count={timeline.length}
           >
-            <div className="space-y-4">
+            {hasAnyFinanceActivity ? (
+              <div className="space-y-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-500">
                   All activity
@@ -4170,20 +4224,17 @@ onClick={(event) => event.stopPropagation()}
                   })}
                 </div>
               </div>
-            ) : (
-              <SectionCard
-                title="No activity yet"
-                description="Payments, invoices, and outbound emails will appear here."
-              >
-                <EmptyState
-                  title="Nothing has happened yet"
-                  description="Create an invoice or record a payment to start the finance timeline."
-                />
-              </SectionCard>
-            )}
-          </div>
+            ) : null}
+            </div>
+            ) : null}
 
-          <div className="xl:sticky xl:top-4 xl:self-start">
+            <div
+              ref={draftFormRef}
+              className={cn(
+                "xl:sticky xl:top-4 xl:self-start",
+                highlightDraft && "rounded-[20px] ring-2 ring-primary ring-offset-2",
+              )}
+            >
             <SectionCard
               title={
                 draftMode === "invoice"
@@ -4320,6 +4371,7 @@ onClick={(event) => event.stopPropagation()}
                       <Input
                         inputMode="decimal"
                         value={invoiceDraft.amount}
+                        onKeyDown={handleDraftFieldKeyDown}
                         onChange={(event) =>
                           setInvoiceDraft((current) => ({
                             ...current,
@@ -4766,6 +4818,7 @@ onClick={(event) => event.stopPropagation()}
                     </p>
                     <p className="mt-1 text-sm opacity-90">
                       {mailResult.message ||
+                        mailResult.error ||
                         (mailResult.ok
                           ? mailResult.dry_run
                             ? "Review the generated output before sending."
@@ -5183,9 +5236,107 @@ onClick={(event) => event.stopPropagation()}
         <div className="grid gap-5 px-6 pb-5 xl:grid-cols-2">
           <SectionCard
             title="Contract Details"
-            description="Financial and operational parameters for this case."
+            description="Shared case and finance data for this contract. Changes here drive the overviews, communication defaults, and invoice drafts."
           >
             <form className="space-y-4" onSubmit={handleProfileSave}>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Client Name">
+                  <Input
+                    value={profileDraft.client_name}
+                    onChange={(event) =>
+                      setProfileDraft((current) => ({
+                        ...current,
+                        client_name: event.target.value,
+                      }))
+                    }
+                  />
+                </Field>
+                <Field label="Company">
+                  <Input
+                    value={companyValue}
+                    onChange={(event) =>
+                      setContactDraft((current) => ({
+                        ...current,
+                        customFields: {
+                          ...current.customFields,
+                          company: event.target.value,
+                        },
+                      }))
+                    }
+                  />
+                </Field>
+                <Field label="Phone">
+                  <Input
+                    value={profileDraft.client_phone}
+                    onChange={(event) =>
+                      setProfileDraft((current) => ({
+                        ...current,
+                        client_phone: event.target.value,
+                      }))
+                    }
+                  />
+                </Field>
+                <Field label="Primary Email">
+                  <Input
+                    type="email"
+                    value={primaryEmail}
+                    onChange={(event) =>
+                      setContactDraft((current) => ({
+                        ...current,
+                        customFields: {
+                          ...current.customFields,
+                          email: event.target.value,
+                        },
+                      }))
+                    }
+                  />
+                </Field>
+                <Field label="Address">
+                  <Input
+                    value={addressValue}
+                    onChange={(event) =>
+                      setContactDraft((current) => ({
+                        ...current,
+                        customFields: {
+                          ...current.customFields,
+                          address: event.target.value,
+                        },
+                      }))
+                    }
+                  />
+                </Field>
+                <Field
+                  label="Alternative Emails"
+                  hint="Separate multiple emails with commas or new lines."
+                >
+                  <Input
+                    value={alternateEmailsValue}
+                    onChange={(event) =>
+                      setContactDraft((current) => ({
+                        ...current,
+                        customFields: {
+                          ...current.customFields,
+                          alternate_emails: event.target.value,
+                        },
+                      }))
+                    }
+                  />
+                </Field>
+              </div>
+
+              {splitMultiValueText(alternateEmailsValue).length ? (
+                <div className="flex flex-wrap gap-2">
+                  {splitMultiValueText(alternateEmailsValue).map((email) => (
+                    <span
+                      key={email}
+                      className="rounded-full border border-[#dbe4ef] bg-[#f8fbff] px-3 py-1 text-xs text-slate-700"
+                    >
+                      {email}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+
               <div className="grid gap-4 md:grid-cols-[1fr_110px_1.1fr]">
                 <Field label="Contract Sum">
                   <Input
@@ -5297,22 +5448,69 @@ onClick={(event) => event.stopPropagation()}
                 />
               </Field>
 
+              {additionalMemoryFields.length ? (
+                <div className="grid gap-4 md:grid-cols-2">
+                  {additionalMemoryFields.map(([key, value]) => {
+                    const definition = caseFieldDefinitionMap.get(key);
+                    const options = definition?.options?.filter(Boolean) ?? [];
+                    const isDropdown =
+                      String(definition?.type ?? "").trim().toLowerCase() ===
+                        "dropdown" && options.length > 0;
+
+                    return (
+                      <Field key={key} label={key}>
+                        {isDropdown ? (
+                          <Select
+                            value={value ?? ""}
+                            onValueChange={(nextValue) =>
+                              setContactDraft((current) => ({
+                                ...current,
+                                customFields: {
+                                  ...current.customFields,
+                                  [key]: nextValue,
+                                },
+                              }))
+                            }
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder={key} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {options.map((option) => (
+                                <SelectItem key={option} value={option}>
+                                  {option}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Input
+                            value={value ?? ""}
+                            onChange={(event) =>
+                              setContactDraft((current) => ({
+                                ...current,
+                                customFields: {
+                                  ...current.customFields,
+                                  [key]: event.target.value,
+                                },
+                              }))
+                            }
+                          />
+                        )}
+                      </Field>
+                    );
+                  })}
+                </div>
+              ) : null}
+
               <div className="flex justify-end gap-2">
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => {
                     const next = buildProfileDraft(data);
-                    setProfileDraft((current) => ({
-                      ...current,
-                      service_type: next.service_type,
-                      finance_date: next.finance_date,
-                      contract_sum: next.contract_sum,
-                      currency: next.currency,
-                      due_date: next.due_date,
-                      finance_status: next.finance_status,
-                      notes: next.notes,
-                    }));
+                    setProfileDraft(next);
+                    setContactDraft(buildContactDraft(data));
                   }}
                 >
                   Reset
@@ -5325,269 +5523,6 @@ onClick={(event) => event.stopPropagation()}
             </form>
           </SectionCard>
 
-          <SectionCard
-            title="Client Information"
-            description="Details used for invoice generation and communication."
-          >
-            <form className="space-y-4" onSubmit={handleClientSave}>
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Client Name">
-                  <Input
-                    value={profileDraft.client_name}
-                    onChange={(event) =>
-                      setProfileDraft((current) => ({
-                        ...current,
-                        client_name: event.target.value,
-                      }))
-                    }
-                  />
-                </Field>
-                <Field label="Company">
-                  <Input
-                    value={companyValue}
-                    onChange={(event) =>
-                      setContactDraft((current) => ({
-                        ...current,
-                        customFields: {
-                          ...current.customFields,
-                          company: event.target.value,
-                        },
-                      }))
-                    }
-                  />
-                </Field>
-                <Field label="Phone">
-                  <Input
-                    value={profileDraft.client_phone}
-                    onChange={(event) =>
-                      setProfileDraft((current) => ({
-                        ...current,
-                        client_phone: event.target.value,
-                      }))
-                    }
-                  />
-                </Field>
-                <Field label="Primary Email">
-                  <Input
-                    type="email"
-                    value={primaryEmail}
-                    onChange={(event) =>
-                      setContactDraft((current) => ({
-                        ...current,
-                        customFields: {
-                          ...current.customFields,
-                          email: event.target.value,
-                        },
-                      }))
-                    }
-                  />
-                </Field>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Stored Case Phone">
-                  <Input
-                    value={contactDraft.phone}
-                    onChange={(event) =>
-                      setContactDraft((current) => ({
-                        ...current,
-                        phone: event.target.value,
-                      }))
-                    }
-                  />
-                </Field>
-                <Field label="Address">
-                  <Input
-                    value={addressValue}
-                    onChange={(event) =>
-                      setContactDraft((current) => ({
-                        ...current,
-                        customFields: {
-                          ...current.customFields,
-                          address: event.target.value,
-                        },
-                      }))
-                    }
-                  />
-                </Field>
-              </div>
-
-              <Field
-                label="Alternative Emails"
-                hint="Separate multiple emails with commas or new lines."
-              >
-                <Input
-                  value={alternateEmailsValue}
-                  onChange={(event) =>
-                    setContactDraft((current) => ({
-                      ...current,
-                      customFields: {
-                        ...current.customFields,
-                        alternate_emails: event.target.value,
-                      },
-                    }))
-                  }
-                />
-              </Field>
-
-              {splitMultiValueText(alternateEmailsValue).length ? (
-                <div className="flex flex-wrap gap-2">
-                  {splitMultiValueText(alternateEmailsValue).map((email) => (
-                    <span
-                      key={email}
-                      className="rounded-full border border-[#dbe4ef] bg-[#f8fbff] px-3 py-1 text-xs text-slate-700"
-                    >
-                      {email}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
-
-              {data.recipients.length ? (
-                <div className="space-y-2">
-                  <Label>Remembered Recipients</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Addresses saved when you send invoice/reminder emails. Add a
-                    label or remove if no longer needed.
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {data.recipients.map((entry) => (
-                      <span
-                        key={entry.email}
-                        className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-700"
-                      >
-                        {editingRecipientEmail === entry.email ? (
-                          <>
-                            <Input
-                              className="h-6 w-28 border-emerald-200 text-xs"
-                              placeholder="e.g. finance"
-                              value={editingRecipientLabel}
-                              onChange={(e) =>
-                                setEditingRecipientLabel(e.target.value)
-                              }
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                  void handleSaveRecipientLabel(
-                                    entry.email,
-                                    editingRecipientLabel,
-                                  );
-                                }
-                                if (e.key === "Escape") {
-                                  setEditingRecipientEmail(null);
-                                  setEditingRecipientLabel("");
-                                }
-                              }}
-                            />
-                            <Button
-                              size="xs"
-                              variant="ghost"
-                              className="h-5 w-5 p-0 text-emerald-700 hover:bg-emerald-100"
-                              onClick={() =>
-                                void handleSaveRecipientLabel(
-                                  entry.email,
-                                  editingRecipientLabel,
-                                )
-                              }
-                              disabled={busyAction === "update-recipient-label"}
-                            >
-                              <SaveIcon className="size-3" />
-                            </Button>
-                            <Button
-                              size="xs"
-                              variant="ghost"
-                              className="h-5 w-5 p-0 text-emerald-700 hover:bg-emerald-100"
-                              onClick={() => {
-                                setEditingRecipientEmail(null);
-                                setEditingRecipientLabel("");
-                              }}
-                            >
-                              <X className="size-3" />
-                            </Button>
-                          </>
-                        ) : (
-                          <>
-                            <span>
-                              {entry.label
-                                ? `${entry.label}: ${entry.email}`
-                                : entry.email}
-                            </span>
-                            <Button
-                              size="xs"
-                              variant="ghost"
-                              className="h-5 w-5 p-0 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-900"
-                              onClick={() => {
-                                setEditingRecipientEmail(entry.email);
-                                setEditingRecipientLabel(entry.label ?? "");
-                              }}
-                              disabled={busyAction != null}
-                              title="Edit label"
-                            >
-                              <PencilIcon className="size-3" />
-                            </Button>
-                            <Button
-                              size="xs"
-                              variant="ghost"
-                              className="h-5 w-5 p-0 text-emerald-700 hover:bg-red-600 hover:text-white"
-                              onClick={() =>
-                                void handleDeleteRecipient(entry.email)
-                              }
-                              disabled={busyAction != null}
-                              title="Remove from case"
-                            >
-                              <X className="size-3" />
-                            </Button>
-                          </>
-                        )}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {additionalMemoryFields.length ? (
-                <div className="grid gap-4 md:grid-cols-2">
-                  {additionalMemoryFields.map(([key, value]) => (
-                    <Field key={key} label={key}>
-                      <Input
-                        value={value ?? ""}
-                        onChange={(event) =>
-                          setContactDraft((current) => ({
-                            ...current,
-                            customFields: {
-                              ...current.customFields,
-                              [key]: event.target.value,
-                            },
-                          }))
-                        }
-                      />
-                    </Field>
-                  ))}
-                </div>
-              ) : null}
-
-              <div className="flex justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    const nextProfile = buildProfileDraft(data);
-                    setProfileDraft((current) => ({
-                      ...current,
-                      client_name: nextProfile.client_name,
-                      client_phone: nextProfile.client_phone,
-                    }));
-                    setContactDraft(buildContactDraft(data));
-                  }}
-                >
-                  Reset
-                </Button>
-                <Button type="submit" disabled={busyAction === "save-contact"}>
-                  <SaveIcon className="size-4" />
-                  Save Changes
-                </Button>
-              </div>
-            </form>
-          </SectionCard>
         </div>
       ) : null}
     </PageContainer>

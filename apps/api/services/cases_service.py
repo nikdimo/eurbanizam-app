@@ -15,7 +15,12 @@ from ..schemas.cases import (
     CaseUpdatePayload,
 )
 
-FIXED_CASE_FIELD_NAMES = ("address",)
+FIXED_CASE_FIELD_NAMES = (
+    "address",
+    "email",
+    "alternate_emails",
+    "Name / Last name",
+)
 
 
 @dataclass

@@ -57,6 +57,7 @@ def _parse_items(row: dict) -> list[dict[str, Any]]:
         "quantity": 1,
         "unitPrice": net,
         "vatRate": vat_rate,
+        "sourceGrossAmount": amount,
     }]
 
 
@@ -66,11 +67,23 @@ def _calculate_rows(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         qty_val = float(item.get("quantity", 1))
         unit_price = float(item.get("unitPrice", 0))
         vat_rate = float(item.get("vatRate", 18))
-        net_amount = qty_val * unit_price
-        vat_amount = round(net_amount * (vat_rate / 100), 2)
-        vat_per_unit = round(unit_price * (vat_rate / 100), 2)
-        gross_unit = unit_price + vat_per_unit
-        gross_amount = net_amount + vat_amount
+        source_gross = item.get("sourceGrossAmount")
+
+        if source_gross is not None:
+            # When we only know the total (amount field), treat it as gross and
+            # back-calculate net and VAT so that net + VAT == gross exactly.
+            gross_amount = float(source_gross)
+            vat_amount = round(gross_amount * (vat_rate / (100 + vat_rate)), 2)
+            net_amount = round(gross_amount - vat_amount, 2)
+            gross_unit = gross_amount / qty_val if qty_val else 0.0
+            unit_price = net_amount / qty_val if qty_val else 0.0
+            vat_per_unit = vat_amount / qty_val if qty_val else 0.0
+        else:
+            net_amount = qty_val * unit_price
+            vat_amount = round(net_amount * (vat_rate / 100), 2)
+            vat_per_unit = round(unit_price * (vat_rate / 100), 2)
+            gross_unit = unit_price + vat_per_unit
+            gross_amount = net_amount + vat_amount
         rows.append({
             "index": i + 1,
             "code": item.get("code", ""),
@@ -299,12 +312,15 @@ def invoice_html_to_pdf(html_content: str) -> Optional[bytes]:
 
         options = {
             "page-size": "A4",
-            "margin-top": "12mm",
-            "margin-right": "12mm",
-            "margin-bottom": "12mm",
-            "margin-left": "12mm",
+            "margin-top": "10mm",
+            "margin-right": "10mm",
+            "margin-bottom": "10mm",
+            "margin-left": "10mm",
             "encoding": "UTF-8",
-            "viewport-size": "794 1123",
+            "viewport-size": "1000x1400",
+            "print-media-type": None,
+            "disable-smart-shrinking": None,
+            "zoom": "1.0",
             "enable-local-file-access": None,
         }
         return pdfkit.from_string(html_content, False, configuration=config, options=options)

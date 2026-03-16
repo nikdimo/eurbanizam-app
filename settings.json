@@ -1,9 +1,9 @@
 {
   "project_root": ".",
-  "runtime_root": "/home/nikola/.eurbanizam",
-  "local_db_path": "/home/nikola/.eurbanizam/db/eurbanizam_local.sqlite",
-  "local_json_dir": "/home/nikola/.eurbanizam/json/cases_full_json",
-  "local_logs_dir": "/home/nikola/.eurbanizam/logs",
+  "runtime_root": ".eurbanizam",
+  "local_db_path": ".eurbanizam/db/eurbanizam_local.sqlite",
+  "local_json_dir": ".eurbanizam/json/cases_full_json",
+  "local_logs_dir": ".eurbanizam/logs",
   "suitcase_db_path": "data/suitcase/eurbanizam_suitcase.sqlite",
   "suitcase_json_dir": "data/suitcase/cases_full_json",
   "schema_validation": {
@@ -91,5 +91,6 @@
     "finance_service_type",
     "finance_notes",
     "finance_unallocated_cash"
-  ]
+  ],
+  "finance_pin": "3950"
 }

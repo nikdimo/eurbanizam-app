@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { ColumnDef } from "@tanstack/react-table";
-import { ChevronDown, Search } from "lucide-react";
+import { ChevronDown, Search, X } from "lucide-react";
 
 import { apiClient } from "@/lib/api/client";
 import { PageContainer } from "@/components/layout/PagePrimitives";
@@ -35,6 +35,8 @@ import {
   FinanceSummarySchema,
 } from "@/lib/schemas";
 import { cn } from "@/lib/utils";
+import { PinGate } from "@/components/ui/pin-gate";
+import { useFinancePinGate } from "@/lib/hooks/use-finance-pin-gate";
 
 type DatePreset = "all" | "today" | "week" | "30days" | "custom";
 type FilterPanelKey = "requestTypes" | "statuses" | null;
@@ -254,7 +256,12 @@ function buildCustomFieldScopeKey(scope: string | null | undefined, name: string
 }
 
 function isFixedCaseField(name: string): boolean {
-  return name.trim().toLowerCase() === "address";
+  const normalized = name.trim().toLowerCase();
+  return (
+    normalized === "address" ||
+    normalized === "email" ||
+    normalized === "name / last name"
+  );
 }
 
 function withFixedCaseFieldDefinitions(
@@ -276,6 +283,31 @@ function withFixedCaseFieldDefinitions(
   });
 
   return Array.from(map.values());
+}
+
+function splitMultiValueText(value?: string | null): string[] {
+  return String(value ?? "")
+    .split(/[\n,;]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function mergeUniqueValues(values: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const raw of values) {
+    const value = String(raw ?? "").trim();
+    if (!value) {
+      continue;
+    }
+    const key = value.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    result.push(value);
+  }
+  return result;
 }
 
 function formatMoney(value?: number | null, currency?: string | null): string {
@@ -675,6 +707,9 @@ export default function FinanceDashboardPage() {
     Record<string, string>
   >({});
   const didInitFilterApply = React.useRef(false);
+  const pinGate = useFinancePinGate();
+  const safeToLoad =
+    pinGate.pinRequired === false || (pinGate.pinRequired && pinGate.unlocked);
 
   const loadSummary = React.useCallback(async () => {
     const res = await apiClient.getParsed(
@@ -728,22 +763,42 @@ export default function FinanceDashboardPage() {
   }, []);
 
   const refreshAll = React.useCallback(async () => {
+    if (!safeToLoad) {
+      return;
+    }
+
     await Promise.all([
       loadSummary(),
       loadFilterOptions(),
       loadFieldDefinitions(),
       loadCases(appliedFilters, pagination),
     ]);
-  }, [appliedFilters, loadCases, loadFieldDefinitions, loadFilterOptions, loadSummary, pagination]);
+  }, [
+    appliedFilters,
+    loadCases,
+    loadFieldDefinitions,
+    loadFilterOptions,
+    loadSummary,
+    pagination,
+    safeToLoad,
+  ]);
 
   React.useEffect(() => {
+    if (!safeToLoad) {
+      return;
+    }
+
     void Promise.all([loadSummary(), loadFilterOptions(), loadFieldDefinitions()]);
-  }, [loadFieldDefinitions, loadFilterOptions, loadSummary]);
+  }, [loadFieldDefinitions, loadFilterOptions, loadSummary, safeToLoad]);
 
   React.useEffect(() => {
+    if (!safeToLoad) {
+      return;
+    }
+
     writeStoredFilters(appliedFilters);
     void loadCases(appliedFilters, pagination);
-  }, [appliedFilters, loadCases, pagination]);
+  }, [appliedFilters, loadCases, pagination, safeToLoad]);
 
   React.useEffect(() => {
     if (!didInitFilterApply.current) {
@@ -1054,6 +1109,84 @@ export default function FinanceDashboardPage() {
         },
       },
       {
+        id: "client_name",
+        accessorFn: (row) => row.custom_fields?.["Name / Last name"] ?? "",
+        header: "Client Name",
+        cell: ({ row }) => {
+          const item = row.original;
+          const key = buildInlineStateKey(
+            item.case_id,
+            "case-custom:Name / Last name",
+          );
+          return (
+            <InlineEditableInput
+              value={item.custom_fields?.["Name / Last name"] ?? ""}
+              placeholder="Client name"
+              onSave={(nextValue) =>
+                handleInlineSave(item.case_id, "case-custom:Name / Last name", {
+                  custom_fields: {
+                    "Name / Last name": normalizeEditableValue(nextValue),
+                  },
+                })
+              }
+              isSaving={Boolean(inlineSaving[key])}
+              error={inlineErrors[key]}
+            />
+          );
+        },
+      },
+      {
+        id: "email",
+        accessorFn: (row) => row.custom_fields?.email ?? "",
+        header: "Email",
+        meta: { className: "min-w-[16rem]" },
+        cell: ({ row }) => {
+          const item = row.original;
+          const fieldKey = "case-custom:email";
+          const key = buildInlineStateKey(item.case_id, fieldKey);
+          const value = item.custom_fields?.email ?? "";
+          const options = mergeUniqueValues([
+            value,
+            ...splitMultiValueText(item.custom_fields?.alternate_emails),
+          ]);
+
+          if (options.length > 1) {
+            return (
+              <InlineEditableSelect
+                value={value}
+                placeholder="Email"
+                options={options}
+                onSave={(nextValue) =>
+                  handleInlineSave(item.case_id, fieldKey, {
+                    custom_fields: {
+                      email: normalizeEditableValue(nextValue),
+                    },
+                  })
+                }
+                isSaving={Boolean(inlineSaving[key])}
+                error={inlineErrors[key]}
+              />
+            );
+          }
+
+          return (
+            <InlineEditableInput
+              value={value}
+              placeholder="Email"
+              onSave={(nextValue) =>
+                handleInlineSave(item.case_id, fieldKey, {
+                  custom_fields: {
+                    email: normalizeEditableValue(nextValue),
+                  },
+                })
+              }
+              isSaving={Boolean(inlineSaving[key])}
+              error={inlineErrors[key]}
+            />
+          );
+        },
+      },
+      {
         accessorKey: "phone",
         header: "Phone",
         cell: ({ row }) => {
@@ -1078,7 +1211,6 @@ export default function FinanceDashboardPage() {
         id: "address",
         accessorFn: (row) => row.custom_fields?.address ?? "",
         header: "Address",
-        enableHiding: false,
         meta: { className: "min-w-[16rem]" },
         cell: ({ row }) => {
           const item = row.original;
@@ -1332,6 +1464,8 @@ export default function FinanceDashboardPage() {
           "updated_at",
           "first_seen",
           "days_since_update",
+          "client_name",
+          "email",
           "phone",
           "address",
           ...caseCustomFieldDefinitions
@@ -1400,6 +1534,41 @@ export default function FinanceDashboardPage() {
     );
   })();
 
+  if (pinGate.statusError) {
+    return (
+      <PageContainer className="overflow-auto">
+        <ErrorState
+          message={pinGate.statusError}
+          onRetry={() => window.location.reload()}
+        />
+      </PageContainer>
+    );
+  }
+
+  if (pinGate.pinRequired === null) {
+    return (
+      <PageContainer className="overflow-auto">
+        <LoadingState label="Checking finance PIN requirement..." />
+      </PageContainer>
+    );
+  }
+
+  if (pinGate.pinRequired && !pinGate.unlocked) {
+    return (
+      <PageContainer className="overflow-auto">
+        <PinGate
+          title="Protected Finance Overview"
+          description="Enter the configured finance PIN to continue."
+          helperText="You can update the PIN in settings.json or via the settings page (after unlocking)."
+          busy={pinGate.verifying}
+          error={pinGate.verifyError}
+          buttonLabel="Unlock finance"
+          onSubmit={(pin) => void pinGate.verifyPin(pin)}
+        />
+      </PageContainer>
+    );
+  }
+
   return (
     <>
       <PageContainer className="gap-5">
@@ -1435,14 +1604,29 @@ export default function FinanceDashboardPage() {
           <div className="grid gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
             <div className="space-y-1.5">
               <Label htmlFor="finance-search">Search</Label>
-              <Input
-                id="finance-search"
-                placeholder="Search case IDs, titles, names, phones, or finance text"
-                value={draftFilters.search}
-                onChange={(event) =>
-                  handleImmediateFilterChange({ search: event.target.value })
-                }
-              />
+              <div className="relative overflow-visible">
+                <Input
+                  id="finance-search"
+                  placeholder="Search case IDs, titles, names, phones, or finance text"
+                  value={draftFilters.search}
+                  onChange={(event) =>
+                    handleImmediateFilterChange({ search: event.target.value })
+                  }
+                  className="pr-10"
+                />
+                {draftFilters.search ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleImmediateFilterChange({ search: "" })
+                    }
+                    className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-muted/90 p-1.5 text-foreground shadow-sm hover:bg-muted"
+                    aria-label="Clear search"
+                  >
+                    <X className="h-4 w-4 shrink-0" />
+                  </button>
+                ) : null}
+              </div>
             </div>
 
             <MultiSelectFilter

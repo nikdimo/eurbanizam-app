@@ -582,6 +582,15 @@ def send_invoice_email(conn: sqlite3.Connection, invoice_id: int, payload: dict[
     attachment_size_bytes = len(pdf_bytes) if pdf_bytes else None
     dry_run = bool(payload.get("dry_run", True))
 
+    api_base = normalize_text(payload.get("api_base")) or "http://127.0.0.1:8000"
+    html_link = f"{api_base.rstrip('/')}/api/finance/invoices/{invoice_id}/html"
+
+    if "{INVOICE_HTML_LINK}" in str(body):
+        body = str(body).replace("{INVOICE_HTML_LINK}", html_link)
+    else:
+        # Append a short view-online note if placeholder not used.
+        body = f"{body}\n\nПогледнете ја фактурата онлајн: {html_link}"
+
     result = {
         "ok": True,
         "dry_run": dry_run,
@@ -607,6 +616,7 @@ def send_invoice_email(conn: sqlite3.Connection, invoice_id: int, payload: dict[
     if error:
         result["ok"] = False
         result["error"] = error
+        result["message"] = error
         return result
 
     conn.execute(
@@ -683,6 +693,7 @@ def send_invoice_reminder(conn: sqlite3.Connection, invoice_id: int, payload: di
     if error:
         result["ok"] = False
         result["error"] = error
+        result["message"] = error
         return result
 
     now = datetime.now().isoformat(timespec="seconds")

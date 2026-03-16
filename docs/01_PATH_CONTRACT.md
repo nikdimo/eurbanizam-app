@@ -1,19 +1,27 @@
-﻿# Path Contract (v2)
+﻿# Path Contract
 
 ## Definitions
-- Project Root: the folder that contains this repo (where admin.py will live).
-- Local Runtime Root (per PC): %USERPROFILE%\\.eurbanizam\\
 
-## Local runtime locations (authoritative during work)
-- Local DB: %USERPROFILE%\\.eurbanizam\\db\\eurbanizam_local.sqlite
-- Local JSON snapshots: %USERPROFILE%\\.eurbanizam\\json\\cases_full_json\\
-- Local Playwright state: %USERPROFILE%\\.eurbanizam\\state\\storage_state.json (optional)
-- Local logs: %USERPROFILE%\\.eurbanizam\\logs\\
+- Project root: the folder that contains this repo.
+- Local runtime root: `%USERPROFILE%\.eurbanizam`
+- VPS runtime root: `/home/niki/.eurbanizam`
 
-## Repo suitcase locations (transport only)
-- Suitcase DB: <repo>\\data\\suitcase\\eurbanizam_suitcase.sqlite
-- Suitcase JSON: <repo>\\data\\suitcase\\cases_full_json\\
+## Local development paths
 
-## Rule
-- Admin and scrapers must use ONLY the local runtime DB/JSON while working.
-- Pull/push scripts move data between repo suitcase and local runtime.
+- Repo: `C:\Users\Nikola Dimovski\eurbanizam-app`
+- API entry: `apps/api/main.py`
+- Web app: `apps/web`
+- Tools: `tools`
+
+## Runtime paths
+
+- Local DB: `%USERPROFILE%\.eurbanizam\db\eurbanizam_local.sqlite`
+- Local JSON snapshots: `%USERPROFILE%\.eurbanizam\json\cases_full_json`
+- Local logs: `%USERPROFILE%\.eurbanizam\logs`
+- Secrets env: `<runtime_root>\secrets\.eurbanizam_secrets.env`
+
+## VPS paths
+
+- Repo: `/home/niki/eurbanizam-app`
+- API bind: `127.0.0.1:8000`
+- Web bind: `127.0.0.1:3000`

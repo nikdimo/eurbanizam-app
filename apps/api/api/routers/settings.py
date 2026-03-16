@@ -36,6 +36,14 @@ class FilterSettingsPayload(BaseModel):
     last_search_text: Optional[str] = Field(default=None)
 
 
+class PinStatus(BaseModel):
+    has_pin: bool
+
+
+class PinVerifyPayload(BaseModel):
+    pin: str
+
+
 @router.get("/settings")
 def get_settings():
     return load_app_settings()
@@ -101,6 +109,24 @@ def create_custom_field(
         return service.create_definition(payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/settings/pin", response_model=PinStatus)
+def get_settings_pin_status():
+    raw_settings = load_app_settings()["raw"]
+    pin_value = str(raw_settings.get("finance_pin", "") or "").strip()
+    return {"has_pin": bool(pin_value)}
+
+
+@router.post("/settings/pin/verify")
+def verify_settings_pin(payload: PinVerifyPayload):
+    raw_settings = load_app_settings()["raw"]
+    pin_value = str(raw_settings.get("finance_pin", "") or "").strip()
+    if not pin_value:
+        raise HTTPException(status_code=400, detail="Finance PIN is not configured.")
+    if payload.pin.strip() != pin_value:
+        raise HTTPException(status_code=401, detail="Invalid finance PIN.")
+    return {"verified": True}
 
 
 @router.put("/custom-fields/{field_name}", response_model=CaseCustomFieldDefinition)

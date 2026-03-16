@@ -1,143 +1,204 @@
-# eUrbanizam Admin
+# eUrbanizam App
 
-Monorepo for the eUrbanizam admin tooling, FastAPI backend, and Next.js web UI.
+Clean working repo for the current eUrbanizam stack: FastAPI backend, Next.js web UI, VPS deploy helpers, and runtime automation tools.
 
-## API quick start
+## Current Status
 
-Run these commands from the repository root:
+- Local working repo: `C:\Users\Nikola Dimovski\eurbanizam-app`
+- GitHub repo: `https://github.com/nikdimo/eurbanizam-app.git`
+- Public domain: `https://eurbanizam.easy.mk`
+- VPS host: `5.189.136.118`
+- VPS SSH user: `niki`
+- VPS app path: `/home/niki/eurbanizam-app`
+- VPS services:
+  - `eurbanizam-api.service`
+  - `eurbanizam-web.service`
+  - `eurbanizam-bot.service`
+
+This repo is intended to be the only active repo for the live app. The old Streamlit UI is not part of this repo.
+
+## Stack
+
+- Web UI: Next.js App Router in `apps/web`
+- API: FastAPI in `apps/api`
+- Shared runtime/automation scripts: `tools`
+- VPS templates: `deploy/vps`
+- Local runtime data: `.eurbanizam`
+
+## Repo Structure
+
+- `apps/api/main.py`: FastAPI entrypoint
+- `apps/api/api/routers`: API route modules
+- `apps/api/core`: DB and settings access layer
+- `apps/api/services`: higher-level service logic
+- `apps/web/src/app`: Next.js routes
+- `apps/web/src/components`: shared UI and feature components
+- `apps/web/src/lib`: API client, schemas, hooks, utilities
+- `tools`: automation, bot, reporting, healthcheck, deploy helper
+- `deploy/vps`: service templates and VPS notes
+- `settings.json`: app/runtime settings
+- `finance_settings.json`: finance-specific settings
+- `.eurbanizam/db/eurbanizam_local.sqlite`: local SQLite DB for testing
+- `.eurbanizam/json/cases_full_json`: local sample case JSON files
+
+## Important Local Files
+
+- `start_app.bat`: starts local API and web app
+- `git_pull.bat`: local `git pull`
+- `git_push.bat`: local add/commit/push helper
+- `connect_VPS.bat`: SSH into the Contabo VPS
+- `pull_to_VPS.bat`: deploy current GitHub branch to the VPS
+- `tools/pull_to_VPS.ps1`: actual deploy script used by `pull_to_VPS.bat`
+
+## Local Runtime Setup
+
+The repo uses a repo-local runtime folder for testing:
+
+- Runtime root: `C:\Users\Nikola Dimovski\eurbanizam-app\.eurbanizam`
+- DB path: `C:\Users\Nikola Dimovski\eurbanizam-app\.eurbanizam\db\eurbanizam_local.sqlite`
+- JSON sample path: `C:\Users\Nikola Dimovski\eurbanizam-app\.eurbanizam\json\cases_full_json`
+- Logs path: `C:\Users\Nikola Dimovski\eurbanizam-app\.eurbanizam\logs`
+
+`settings.json` in this repo is already pointed at those local paths.
+
+## Start Locally
+
+Main launcher:
 
 ```powershell
-cd C:\Users\Nikola Dimovski\eurbanizam-admin
-python -m pip install -r requirements.txt
-python -m pip install -e .
-python -m uvicorn apps.api.main:app --reload
+cd C:\Users\Nikola Dimovski\eurbanizam-app
+.\start_app.bat
 ```
 
-After the editable install completes, you can also start the API from any directory with:
+That starts:
+
+- FastAPI on `http://127.0.0.1:8000`
+- Next.js on `http://127.0.0.1:3000`
+
+Notes:
+
+- `.venv` is created automatically if missing.
+- Python packages are checked/installed on each run.
+- Web dependencies are installed if `apps/web/node_modules` is missing.
+
+## Manual Start
+
+API:
 
 ```powershell
-eurbanizam-api
+cd C:\Users\Nikola Dimovski\eurbanizam-app
+.\.venv\Scripts\python -m uvicorn apps.api.main:app --reload
 ```
 
-## Web quick start
+Web:
 
 ```powershell
-cd apps\web
-npm install
+cd C:\Users\Nikola Dimovski\eurbanizam-app\apps\web
 npm run dev
 ```
 
-## Codex Handoff
+## Deploy Workflow
 
-This repo is the local `C:\Users\Nikola Dimovski\eurbanizam-admin` working copy.
-The old Google Drive repo was copied here for local work, but the current source of work should be this C drive repo.
+Push current work to GitHub:
 
-### Old vs new UI
+```powershell
+cd C:\Users\Nikola Dimovski\eurbanizam-app
+.\git_push.bat
+```
 
-- Old baseline UI:
-  - `admin.py`
-  - `admin_pages/finance.py`
-- New UI:
-  - `apps/web`
-- New API boundary:
-  - `apps/api`
+Connect to VPS:
 
-The old Streamlit UI is still the functional reference for behavior and workflow logic.
+```powershell
+cd C:\Users\Nikola Dimovski\eurbanizam-app
+.\connect_VPS.bat
+```
 
-### Current product logic
+Deploy to VPS:
 
-#### Cases overview
+```powershell
+cd C:\Users\Nikola Dimovski\eurbanizam-app
+.\pull_to_VPS.bat
+```
 
-- Cases shows:
-  - core case columns
-  - `Phone`
-  - enabled `case`-scoped custom fields
-- Cases does not show:
-  - `finance_*` columns
-  - `finance`-scoped custom fields
-- Inline editable in Cases:
-  - `Phone`
-  - enabled `case`-scoped custom fields
-- Read-only in Cases overview:
-  - core case metadata such as `title`, `status`, `request_type`, timestamps, IDs
+Useful deploy flags:
 
-#### Finance overview
+```powershell
+.\pull_to_VPS.bat --dry-run
+.\pull_to_VPS.bat --restart-bot
+.\pull_to_VPS.bat --with-playwright
+.\pull_to_VPS.bat --skip-web-build
+.\pull_to_VPS.bat --branch main
+```
 
-- Finance shows:
-  - case context columns
-  - finance columns
-  - enabled `case`-scoped custom fields
-  - enabled `finance`-scoped custom fields
-- Inline editable in Finance overview:
-  - `finance_status`
-  - `Phone`
-  - enabled custom fields
+The deploy target is hardcoded to:
 
-### Custom field rules
+- host: `niki@5.189.136.118`
+- key: `%USERPROFILE%\.ssh\contabo_nikola`
+- repo: `/home/niki/eurbanizam-app`
 
-- Custom fields are dynamic definitions, not hardcoded SQL columns.
-- Definitions live in `settings.json` under `custom_field_defs`.
-- Values live in `case_user_data`.
-- `Phone` is reserved and cannot be created as a custom field.
-- Supported field types:
-  - `Text`
-  - `Dropdown`
-- Scope rules:
-  - create from Cases -> `scope: "case"`
-  - create from Finance -> `scope: "finance"`
+## VPS Runtime
 
-### Important new UI files
+Current VPS service configuration is expected to be:
 
-- Cases page:
-  - `apps/web/src/app/(shell)/cases/page.tsx`
-- Finance page:
-  - `apps/web/src/app/(shell)/finance/page.tsx`
-- Finance detail:
-  - `apps/web/src/app/(shell)/finance/cases/[caseId]/page.tsx`
-- Shared custom field manager:
-  - `apps/web/src/components/custom-fields/custom-field-manager.tsx`
-- Shared table:
-  - `apps/web/src/components/ui/datagrid.tsx`
-- Frontend schemas:
-  - `apps/web/src/lib/schemas.ts`
+- API service: `eurbanizam-api.service`
+- Web service: `eurbanizam-web.service`
+- Bot service: `eurbanizam-bot.service`
+- Web app working directory: `/home/niki/eurbanizam-app/apps/web`
+- API app working directory: `/home/niki/eurbanizam-app`
+- Public domain served by nginx: `eurbanizam.easy.mk`
 
-### Important API files
+## Finance PIN Gate
 
-- Cases service/core:
-  - `apps/api/services/cases_service.py`
-  - `apps/api/core/cases.py`
-- Finance service/core:
-  - `apps/api/services/finance_service.py`
-  - `apps/api/core/finance_cases.py`
-- Custom field service:
-  - `apps/api/services/custom_fields_service.py`
-- Routers:
-  - `apps/api/api/routers/cases.py`
-  - `apps/api/api/routers/finance.py`
-  - `apps/api/api/routers/settings.py`
+Finance and Settings are PIN-protected in this repo.
 
-### Important API endpoints
+Relevant files:
 
-- Cases:
-  - `GET /api/cases`
-  - `GET /api/cases/{case_id}`
-  - `PATCH /api/cases/{case_id}`
-- Finance:
-  - `GET /api/finance/summary`
-  - `GET /api/finance/cases`
-  - `GET /api/finance/cases/{case_id}`
-  - `PATCH /api/finance/cases/{case_id}/overview`
-- Custom fields:
-  - `GET /api/custom-fields`
-  - `POST /api/custom-fields`
-  - `PUT /api/custom-fields/{field_name}`
+- `apps/api/api/routers/settings.py`
+- `apps/web/src/components/ui/pin-gate.tsx`
+- `apps/web/src/lib/hooks/use-finance-pin-gate.ts`
+- `apps/web/src/app/(shell)/finance/page.tsx`
+- `apps/web/src/app/(shell)/settings/page.tsx`
 
-### Current verification status
+Current local test PIN is stored in `settings.json` as `finance_pin`.
 
-- `npx tsc --noEmit` passes in `apps/web`
-- `npm run lint` passes in `apps/web`
-- `python -m py_compile` passes for changed API files
+If the PIN gate does not appear locally:
 
-### Known limitation from Codex sandbox
+1. restart `start_app.bat`
+2. open a fresh incognito window
+3. clear browser session storage if needed
 
-- Runtime access to the live SQLite DB under `%USERPROFILE%\.eurbanizam\...` may fail inside the sandbox with `unable to open database file`, so some end-to-end data checks must be verified on the local machine.
+The unlock flag is stored in browser `sessionStorage` under:
+
+- `eurbanizam.finance_pin.unlocked`
+
+## Verification
+
+Python checks:
+
+```powershell
+cd C:\Users\Nikola Dimovski\eurbanizam-app
+python tools\project_checks.py --skip-web
+```
+
+Web lint:
+
+```powershell
+cd C:\Users\Nikola Dimovski\eurbanizam-app\apps\web
+npm run lint
+```
+
+TypeScript:
+
+```powershell
+cd C:\Users\Nikola Dimovski\eurbanizam-app\apps\web
+npx tsc --noEmit
+```
+
+## Important Notes For Future Sessions
+
+- This repo replaced the older `eurbanizam-tracker` / `eurbanizam-admin` workflow for the live app.
+- The old repo did contain the first working PIN-gate implementation, but this repo now has that feature ported in.
+- The new repo has a local SQLite DB plus 30 sample case JSON files copied in only for easier local testing.
+- `.eurbanizam`, `.venv`, `node_modules`, `.next`, and `*.egg-info` are ignored and should stay local-only.
+- Do not reintroduce the old Streamlit UI into this repo.
+- If local pages show `Internal Server Error`, check `settings.json` first and confirm the DB path exists.

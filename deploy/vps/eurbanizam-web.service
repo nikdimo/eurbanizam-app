@@ -5,8 +5,8 @@ Requires=eurbanizam-api.service
 
 [Service]
 Type=simple
-User=nikola
-WorkingDirectory=/home/nikola/eurbanizam-app/apps/web
+User=niki
+WorkingDirectory=/home/niki/eurbanizam-app/apps/web
 Environment=NODE_ENV=production
 Environment=PORT=3000
 Environment=HOST=127.0.0.1
@@ -17,3 +17,4 @@ RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
+
