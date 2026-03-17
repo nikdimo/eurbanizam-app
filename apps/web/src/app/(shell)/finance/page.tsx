@@ -1066,7 +1066,12 @@ export default function FinanceDashboardPage() {
       {
         accessorKey: "title",
         header: "Title",
-        cell: ({ row }) => displayText(row.original.title, "Untitled case"),
+        meta: { className: "w-[30%] max-w-[32rem]" },
+        cell: ({ row }) => (
+          <span className="block max-w-[32rem] truncate text-sm text-foreground">
+            {displayText(row.original.title, "Untitled case")}
+          </span>
+        ),
       },
       {
         accessorKey: "request_type",
