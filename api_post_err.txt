@@ -1,0 +1,50 @@
+Mar 17 20:17:40 vmi3103374 python[535302]:   File "/home/niki/eurbanizam-app/.venv/lib/python3.12/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+Mar 17 20:17:40 vmi3103374 python[535302]:     await self.app(scope, receive, send)
+Mar 17 20:17:40 vmi3103374 python[535302]:   File "/home/niki/eurbanizam-app/.venv/lib/python3.12/site-packages/starlette/routing.py", line 716, in __call__
+Mar 17 20:17:40 vmi3103374 python[535302]:     await self.middleware_stack(scope, receive, send)
+Mar 17 20:17:40 vmi3103374 python[535302]:   File "/home/niki/eurbanizam-app/.venv/lib/python3.12/site-packages/starlette/routing.py", line 736, in app
+Mar 17 20:17:40 vmi3103374 python[535302]:     await route.handle(scope, receive, send)
+Mar 17 20:17:40 vmi3103374 python[535302]:   File "/home/niki/eurbanizam-app/.venv/lib/python3.12/site-packages/starlette/routing.py", line 290, in handle
+Mar 17 20:17:40 vmi3103374 python[535302]:     await self.app(scope, receive, send)
+Mar 17 20:17:40 vmi3103374 python[535302]:   File "/home/niki/eurbanizam-app/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 130, in app
+Mar 17 20:17:40 vmi3103374 python[535302]:     await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+Mar 17 20:17:40 vmi3103374 python[535302]:   File "/home/niki/eurbanizam-app/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+Mar 17 20:17:40 vmi3103374 python[535302]:     raise exc
+Mar 17 20:17:40 vmi3103374 python[535302]:   File "/home/niki/eurbanizam-app/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+Mar 17 20:17:40 vmi3103374 python[535302]:     await app(scope, receive, sender)
+Mar 17 20:17:40 vmi3103374 python[535302]:   File "/home/niki/eurbanizam-app/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 116, in app
+Mar 17 20:17:40 vmi3103374 python[535302]:     response = await f(request)
+Mar 17 20:17:40 vmi3103374 python[535302]:                ^^^^^^^^^^^^^^^^
+Mar 17 20:17:40 vmi3103374 python[535302]:   File "/home/niki/eurbanizam-app/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 670, in app
+Mar 17 20:17:40 vmi3103374 python[535302]:     raw_response = await run_endpoint_function(
+Mar 17 20:17:40 vmi3103374 python[535302]:                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Mar 17 20:17:40 vmi3103374 python[535302]:   File "/home/niki/eurbanizam-app/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 326, in run_endpoint_function
+Mar 17 20:17:40 vmi3103374 python[535302]:     return await run_in_threadpool(dependant.call, **values)
+Mar 17 20:17:40 vmi3103374 python[535302]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Mar 17 20:17:40 vmi3103374 python[535302]:   File "/home/niki/eurbanizam-app/.venv/lib/python3.12/site-packages/starlette/concurrency.py", line 32, in run_in_threadpool
+Mar 17 20:17:40 vmi3103374 python[535302]:     return await anyio.to_thread.run_sync(func)
+Mar 17 20:17:40 vmi3103374 python[535302]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Mar 17 20:17:40 vmi3103374 python[535302]:   File "/home/niki/eurbanizam-app/.venv/lib/python3.12/site-packages/anyio/to_thread.py", line 63, in run_sync
+Mar 17 20:17:40 vmi3103374 python[535302]:     return await get_async_backend().run_sync_in_worker_thread(
+Mar 17 20:17:40 vmi3103374 python[535302]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Mar 17 20:17:40 vmi3103374 python[535302]:   File "/home/niki/eurbanizam-app/.venv/lib/python3.12/site-packages/anyio/_backends/_asyncio.py", line 2502, in run_sync_in_worker_thread
+Mar 17 20:17:40 vmi3103374 python[535302]:     return await future
+Mar 17 20:17:40 vmi3103374 python[535302]:            ^^^^^^^^^^^^
+Mar 17 20:17:40 vmi3103374 python[535302]:   File "/home/niki/eurbanizam-app/.venv/lib/python3.12/site-packages/anyio/_backends/_asyncio.py", line 986, in run
+Mar 17 20:17:40 vmi3103374 python[535302]:     result = context.run(func, *args)
+Mar 17 20:17:40 vmi3103374 python[535302]:              ^^^^^^^^^^^^^^^^^^^^^^^^
+Mar 17 20:17:40 vmi3103374 python[535302]:   File "/home/niki/eurbanizam-app/apps/api/api/routers/finance.py", line 51, in list_finance_cases
+Mar 17 20:17:40 vmi3103374 python[535302]:     return service.list_cases(
+Mar 17 20:17:40 vmi3103374 python[535302]:            ^^^^^^^^^^^^^^^^^^^
+Mar 17 20:17:40 vmi3103374 python[535302]:   File "/home/niki/eurbanizam-app/apps/api/services/finance_service.py", line 64, in list_cases
+Mar 17 20:17:40 vmi3103374 python[535302]:     with db_session(self.db_path) as conn:
+Mar 17 20:17:40 vmi3103374 python[535302]:   File "/usr/lib/python3.12/contextlib.py", line 137, in __enter__
+Mar 17 20:17:40 vmi3103374 python[535302]:     return next(self.gen)
+Mar 17 20:17:40 vmi3103374 python[535302]:            ^^^^^^^^^^^^^^
+Mar 17 20:17:40 vmi3103374 python[535302]:   File "/home/niki/eurbanizam-app/apps/api/repositories/db.py", line 20, in db_session
+Mar 17 20:17:40 vmi3103374 python[535302]:     conn = get_connection(db_path)
+Mar 17 20:17:40 vmi3103374 python[535302]:            ^^^^^^^^^^^^^^^^^^^^^^^
+Mar 17 20:17:40 vmi3103374 python[535302]:   File "/home/niki/eurbanizam-app/apps/api/repositories/db.py", line 11, in get_connection
+Mar 17 20:17:40 vmi3103374 python[535302]:     conn = sqlite3.connect(str(path), timeout=30, check_same_thread=False)
+Mar 17 20:17:40 vmi3103374 python[535302]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Mar 17 20:17:40 vmi3103374 python[535302]: sqlite3.OperationalError: unable to open database file
