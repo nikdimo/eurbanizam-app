@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ColumnDef } from "@tanstack/react-table";
+import { ColumnDef, SortingState } from "@tanstack/react-table";
 import { ChevronDown, Search, X } from "lucide-react";
 
 import { apiClient } from "@/lib/api/client";
@@ -53,7 +53,6 @@ type FilterState = {
 };
 
 type FinancePatchPayload = {
-  finance_status?: string;
   phone?: string;
   custom_fields?: Record<string, string>;
 };
@@ -64,14 +63,6 @@ type InlineSaveResult =
 
 const FILTER_STORAGE_KEY = "finance:overview-filters";
 const EMPTY_VALUE = "__empty__";
-const FINANCE_STATUS_OPTIONS = [
-  "GRAY",
-  "GREEN",
-  "YELLOW",
-  "RED",
-  "PENDING",
-  "PAID",
-];
 const FILTER_APPLY_DELAY_MS = 250;
 const DEFAULT_PAGE_SIZE = 100;
 const DEFAULT_FILTERS: FilterState = {
@@ -170,9 +161,19 @@ function getResolvedDateRange(filters: FilterState): {
   return {};
 }
 
+const FINANCE_SORT_COLUMN_MAP: Record<string, string> = {
+  contract_sum: "finance_contract_sum",
+  paid_total: "finance_paid_total",
+  remaining: "finance_remaining",
+  overdue_amount: "finance_overdue_amount",
+  first_seen: "First Seen",
+  days_since_update: "Denovi (Od Posledna)",
+};
+
 function buildFinancePath(
   filters: FilterState,
   pagination?: { pageIndex: number; pageSize: number },
+  sorting?: SortingState,
 ): string {
   const params = new URLSearchParams();
   const search = filters.search.trim();
@@ -200,6 +201,12 @@ function buildFinancePath(
   if (pagination) {
     params.set("limit", String(pagination.pageSize));
     params.set("offset", String(pagination.pageIndex * pagination.pageSize));
+  }
+  const firstSort = sorting?.[0];
+  if (firstSort != null) {
+    const sortBy = FINANCE_SORT_COLUMN_MAP[firstSort.id] ?? firstSort.id;
+    params.set("sort_by", sortBy);
+    params.set("sort_desc", firstSort.desc ? "true" : "false");
   }
 
   const query = params.toString();
@@ -339,8 +346,6 @@ function toFinanceSummary(detail: FinanceCaseDetail): FinanceCase {
     contract_amount: detail.contract_amount,
     paid_total: detail.paid_total,
     remaining: detail.remaining,
-    due_date: detail.due_date,
-    finance_status: detail.finance_status,
     payments_count: detail.payments_count,
     overdue_amount: detail.overdue_amount,
     currency: detail.currency,
@@ -700,6 +705,7 @@ export default function FinanceDashboardPage() {
     pageIndex: 0,
     pageSize: DEFAULT_PAGE_SIZE,
   });
+  const [sorting, setSorting] = React.useState<SortingState>([]);
   const [inlineSaving, setInlineSaving] = React.useState<
     Record<string, boolean>
   >({});
@@ -744,10 +750,11 @@ export default function FinanceDashboardPage() {
   const loadCases = React.useCallback(async (
     filters: FilterState,
     nextPagination: { pageIndex: number; pageSize: number },
+    nextSorting?: SortingState,
   ) => {
     setIsLoading(true);
     const res = await apiClient.getParsed(
-      buildFinancePath(filters, nextPagination),
+      buildFinancePath(filters, nextPagination, nextSorting),
       PaginatedFinanceCaseListSchema,
     );
     if (res.error) {
@@ -771,7 +778,7 @@ export default function FinanceDashboardPage() {
       loadSummary(),
       loadFilterOptions(),
       loadFieldDefinitions(),
-      loadCases(appliedFilters, pagination),
+      loadCases(appliedFilters, pagination, sorting),
     ]);
   }, [
     appliedFilters,
@@ -781,6 +788,7 @@ export default function FinanceDashboardPage() {
     loadSummary,
     pagination,
     safeToLoad,
+    sorting,
   ]);
 
   React.useEffect(() => {
@@ -797,8 +805,8 @@ export default function FinanceDashboardPage() {
     }
 
     writeStoredFilters(appliedFilters);
-    void loadCases(appliedFilters, pagination);
-  }, [appliedFilters, loadCases, pagination, safeToLoad]);
+    void loadCases(appliedFilters, pagination, sorting);
+  }, [appliedFilters, loadCases, pagination, safeToLoad, sorting]);
 
   React.useEffect(() => {
     if (!didInitFilterApply.current) {
@@ -1329,37 +1337,6 @@ export default function FinanceDashboardPage() {
           formatMoney(row.original.overdue_amount, row.original.currency),
       },
       {
-        accessorKey: "due_date",
-        header: "Due Date",
-        cell: ({ row }) => (
-          <span className="text-xs text-muted-foreground">
-            {formatDate(row.original.due_date)}
-          </span>
-        ),
-      },
-      {
-        accessorKey: "finance_status",
-        header: "Finance Status",
-        cell: ({ row }) => {
-          const item = row.original;
-          const key = buildInlineStateKey(item.case_id, "finance_status");
-          return (
-            <InlineEditableSelect
-              value={item.finance_status}
-              placeholder="Finance status"
-              options={FINANCE_STATUS_OPTIONS}
-              onSave={(nextValue) =>
-                handleInlineSave(item.case_id, "finance_status", {
-                  finance_status: normalizeEditableValue(nextValue),
-                })
-              }
-              isSaving={Boolean(inlineSaving[key])}
-              error={inlineErrors[key]}
-            />
-          );
-        },
-      },
-      {
         accessorKey: "payments_count",
         header: "Payments",
         cell: ({ row }) => row.original.payments_count ?? 0,
@@ -1483,8 +1460,6 @@ export default function FinanceDashboardPage() {
           "paid_total",
           "remaining",
           "overdue_amount",
-          "due_date",
-          "finance_status",
           "payments_count",
           "service_type",
           ...financeCustomFieldDefinitions.map(
@@ -1530,6 +1505,11 @@ export default function FinanceDashboardPage() {
         pageSize={pagination.pageSize}
         totalRows={totalRows}
         onPaginationChange={setPagination}
+        sorting={sorting}
+        onSortingChange={(next) => {
+          setSorting(next);
+          setPagination((p) => ({ ...p, pageIndex: 0 }));
+        }}
       />
     );
   })();

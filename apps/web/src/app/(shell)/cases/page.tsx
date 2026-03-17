@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ColumnDef } from "@tanstack/react-table";
+import { ColumnDef, SortingState } from "@tanstack/react-table";
 import { ChevronDown, Search } from "lucide-react";
 
 import { apiClient } from "@/lib/api/client";
@@ -320,9 +320,15 @@ function getResolvedDateRange(filters: FilterState): {
   return {};
 }
 
+const CASE_SORT_COLUMN_MAP: Record<string, string> = {
+  first_seen: "First Seen",
+  days_since_update: "Denovi (Od Posledna)",
+};
+
 function buildCasesQuery(
   filters: FilterState,
   pagination?: { pageIndex: number; pageSize: number },
+  sorting?: SortingState,
 ): {
   q?: string;
   request_type: string[];
@@ -331,8 +337,17 @@ function buildCasesQuery(
   date_to?: string;
   limit?: number;
   offset?: number;
+  sort_by?: string;
+  sort_desc?: boolean;
 } {
   const { dateFrom, dateTo } = getResolvedDateRange(filters);
+  const firstSort = sorting?.[0];
+  const sortBy =
+    firstSort != null
+      ? CASE_SORT_COLUMN_MAP[firstSort.id] ?? firstSort.id
+      : undefined;
+  const sortDesc = firstSort?.desc ?? true;
+
   return {
     q: filters.search.trim() || undefined,
     request_type: filters.requestTypes ?? [],
@@ -341,6 +356,8 @@ function buildCasesQuery(
     date_to: dateTo,
     limit: pagination?.pageSize,
     offset: pagination ? pagination.pageIndex * pagination.pageSize : undefined,
+    sort_by: sortBy,
+    sort_desc: sortDesc,
   };
 }
 
@@ -933,6 +950,7 @@ export default function CasesPage() {
     pageIndex: 0,
     pageSize: DEFAULT_PAGE_SIZE,
   });
+  const [sorting, setSorting] = React.useState<SortingState>([]);
 
   const [selected, setSelected] = React.useState<CaseDetail | null>(null);
   const [editor, setEditor] = React.useState<EditableCase | null>(null);
@@ -991,6 +1009,7 @@ export default function CasesPage() {
   const loadCases = React.useCallback(async (
     filters: FilterState,
     nextPagination: { pageIndex: number; pageSize: number },
+    nextSorting?: SortingState,
   ) => {
     setIsLoading(true);
     if (
@@ -1006,7 +1025,7 @@ export default function CasesPage() {
 
     const res = await apiClient.post<unknown>(
       "/api/cases/query",
-      buildCasesQuery(filters, nextPagination),
+      buildCasesQuery(filters, nextPagination, nextSorting),
     );
     if (res.error || res.data == null) {
       setError(res.error);
@@ -1032,9 +1051,9 @@ export default function CasesPage() {
     await Promise.all([
       loadFilterOptions(),
       loadFieldDefinitions(),
-      loadCases(appliedFilters, pagination),
+      loadCases(appliedFilters, pagination, sorting),
     ]);
-  }, [appliedFilters, loadCases, loadFieldDefinitions, loadFilterOptions, pagination]);
+  }, [appliedFilters, loadCases, loadFieldDefinitions, loadFilterOptions, pagination, sorting]);
 
   React.useEffect(() => {
     void Promise.all([loadFilterOptions(), loadFieldDefinitions()]);
@@ -1072,8 +1091,8 @@ export default function CasesPage() {
 
   React.useEffect(() => {
     writeStoredFilters(appliedFilters);
-    void loadCases(appliedFilters, pagination);
-  }, [appliedFilters, loadCases, pagination]);
+    void loadCases(appliedFilters, pagination, sorting);
+  }, [appliedFilters, loadCases, pagination, sorting]);
 
   React.useEffect(() => {
     if (!didInitFilterApply.current) {
@@ -1285,10 +1304,10 @@ export default function CasesPage() {
       }
 
       applyUpdatedCase(parsed.data);
-      await loadCases(appliedFilters, pagination);
+      await loadCases(appliedFilters, pagination, sorting);
       return { ok: true };
     },
-    [appliedFilters, applyUpdatedCase, loadCases, pagination],
+    [appliedFilters, applyUpdatedCase, loadCases, pagination, sorting],
   );
 
   const openCase = React.useCallback(
@@ -1811,6 +1830,11 @@ export default function CasesPage() {
         pageSize={pagination.pageSize}
         totalRows={totalRows}
         onPaginationChange={setPagination}
+        sorting={sorting}
+        onSortingChange={(next) => {
+          setSorting(next);
+          setPagination((p) => ({ ...p, pageIndex: 0 }));
+        }}
       />
     );
   })();

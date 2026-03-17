@@ -1,4 +1,4 @@
-﻿Set-StrictMode -Version Latest
+Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $keyPath = Join-Path $env:USERPROFILE ".ssh\contabo_nikola"
@@ -201,7 +201,7 @@ if unit_is_loaded "$WEB_SERVICE"; then
     fi
 
     log "Building web app"
-    NEXT_TELEMETRY_DISABLED=1 npm run build
+    NEXT_PUBLIC_API_URL=https://eurbanizam.easy.mk NEXT_TELEMETRY_DISABLED=1 npm run build
     cd "$REPO_PATH"
   else
     log "Skipping web build (apps/web/package.json not found)"

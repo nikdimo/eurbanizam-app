@@ -58,6 +58,8 @@ class FinanceService:
         needs_action_only: bool,
         limit: int,
         offset: int,
+        sort_by: Optional[str] = None,
+        sort_desc: bool = True,
     ) -> PaginatedFinanceCaseList:
         with db_session(self.db_path) as conn:
             rows, total = finance_cases.list_finance_case_summaries(
@@ -72,6 +74,8 @@ class FinanceService:
                 custom_field_names=self.get_custom_field_names(),
                 limit=limit,
                 offset=offset,
+                sort_by=sort_by,
+                sort_desc=sort_desc,
             )
         return PaginatedFinanceCaseList(
             items=[FinanceCaseListItem(**row) for row in rows],
@@ -96,28 +100,6 @@ class FinanceService:
     ) -> Optional[FinanceCaseDetail]:
         updates = _dump_payload(payload)
         with db_session(self.db_path) as conn:
-            if "finance_status" in updates:
-                finance_cases.ensure_finance_case_exists(
-                    conn,
-                    case_id,
-                    {
-                        "currency": "MKD",
-                        "finance_status": updates.get("finance_status") or "GRAY",
-                    },
-                )
-                conn.execute(
-                    """
-                    UPDATE finance_cases
-                    SET finance_status = ?, updated_at = ?
-                    WHERE case_id = ?
-                    """,
-                    (
-                        updates.get("finance_status") or "GRAY",
-                        datetime.now().isoformat(timespec="seconds"),
-                        case_id,
-                    ),
-                )
-
             case_updates = {}
             if "phone" in updates:
                 case_updates["phone"] = updates.get("phone")
@@ -167,10 +149,7 @@ class FinanceService:
             finance_cases.ensure_finance_case_exists(
                 conn,
                 case_id,
-                {
-                    "currency": payload.currency,
-                    "finance_status": "GRAY",
-                },
+                {"currency": payload.currency},
             )
             finance_invoices.insert_payment(
                 conn,

@@ -1,0 +1,24 @@
+total 80
+-rw-rw-r-- 1 niki niki 1098 Mar 16 13:09 ARCHITECTURE_SUMMARY.md
+-rw-rw-r-- 1 niki niki 5641 Mar 16 13:09 README.md
+-rw-rw-r-- 1 niki niki    9 Mar 14 23:21 VERSION
+drwxrwxr-x 5 niki niki 4096 Mar 14 21:10 apps
+-rw-rw-r-- 1 niki niki  125 Mar 16 13:09 connect_VPS.bat
+drwxrwxr-x 3 niki niki 4096 Mar 14 19:53 deploy
+drwxrwxr-x 2 niki niki 4096 Mar 16 13:09 docs
+drwxrwxr-x 2 niki niki 4096 Mar 16 13:11 eurbanizam_app.egg-info
+drwxrwxr-x 2 niki niki 4096 Mar 16 08:46 eurbanizam_tracker.egg-info
+-rw-rw-r-- 1 niki niki 1590 Mar 16 13:09 finance_settings.json
+-rw-rw-r-- 1 niki niki  632 Mar 16 13:09 git_push.bat
+-rw-rw-r-- 1 niki niki  439 Mar 16 13:09 pull_to_VPS.bat
+-rw-rw-r-- 1 niki niki  482 Mar 16 13:09 pyproject.toml
+-rw-rw-r-- 1 niki niki  167 Mar 16 13:09 requirements.txt
+-rw-rw-r-- 1 niki niki  676 Mar 16 13:09 run_Codex.bat
+-rw-rw-r-- 1 niki niki 2313 Mar 17 15:54 settings.json
+-rw-rw-r-- 1 niki niki  112 Mar 14 23:21 settings.template.json
+-rw-rw-r-- 1 niki niki 1225 Mar 16 13:09 start_app.bat
+drwxrwxr-x 3 niki niki 4096 Mar 16 13:09 tools
+  eurbanizam-api.service                                                                       loaded active running   eUrbanizam API
+  eurbanizam-bot.service                                                                       loaded active running   eUrbanizam Telegram Bot
+  eurbanizam-web.service                                                                       loaded active running   eUrbanizam Web
+  eurbanizam-daily.timer                                                                       loaded active waiting   Run eUrbanizam daily sync and report at 04:00

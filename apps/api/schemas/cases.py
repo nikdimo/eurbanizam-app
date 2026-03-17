@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from typing import Dict, Optional
 
@@ -66,8 +66,10 @@ class CaseListQueryPayload(BaseModel):
     status: list[str] = Field(default_factory=list)
     date_from: Optional[str] = None
     date_to: Optional[str] = None
-    limit: int = Field(default=100, ge=1, le=500)
+    limit: int = Field(default=100, ge=1, le=10000)
     offset: int = Field(default=0, ge=0)
+    sort_by: Optional[str] = None
+    sort_desc: bool = True
 
 
 class PaginatedCaseList(BaseModel):

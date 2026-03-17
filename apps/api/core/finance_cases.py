@@ -28,8 +28,6 @@ FINANCE_SNAPSHOT_COLUMNS = [
     "finance_paid_total",
     "finance_remaining",
     "finance_overdue_amount",
-    "finance_due_date",
-    "finance_status",
     "finance_last_payment_date",
     "finance_payments_count",
     "finance_service_type",
@@ -46,12 +44,9 @@ def load_finance_df(conn: sqlite3.Connection) -> pd.DataFrame:
             client_name,
             client_phone,
             service_type,
-            finance_date,
             contract_sum,
             currency,
             paid_amount,
-            due_date,
-            finance_status,
             notes,
             created_at,
             updated_at
@@ -102,10 +97,7 @@ def with_calculated_fields(df: pd.DataFrame) -> pd.DataFrame:
         errors="coerce",
     ).fillna(0.0)
     out["remaining"] = (out["contract_sum"] - out["paid_amount"]).clip(lower=0.0)
-    out["finance_date_dt"] = out["finance_date"].apply(parse_date)
-    out["due_date_dt"] = out["due_date"].apply(parse_date)
-    today = date.today()
-    out["days_overdue"] = out["due_date_dt"].apply(lambda value: (today - value).days if isinstance(value, date) and value < today else 0)
+    out["days_overdue"] = 0
     return out
 
 
@@ -126,11 +118,11 @@ def ensure_finance_case_exists(conn: sqlite3.Connection, case_id: str, seed: dic
     conn.execute(
         """
         INSERT INTO finance_cases (
-            case_id, client_name, client_phone, service_type, finance_date,
-            contract_sum, currency, paid_amount, due_date, finance_status,
+            case_id, client_name, client_phone, service_type,
+            contract_sum, currency, paid_amount,
             notes, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(case_id) DO NOTHING
         """,
         (
@@ -138,12 +130,9 @@ def ensure_finance_case_exists(conn: sqlite3.Connection, case_id: str, seed: dic
             seed.get("client_name"),
             seed.get("client_phone"),
             seed.get("service_type"),
-            seed.get("finance_date"),
             as_float(seed.get("contract_sum")),
             str(seed.get("currency") or "MKD"),
             as_float(seed.get("paid_amount")),
-            seed.get("due_date"),
-            str(seed.get("finance_status") or "GRAY"),
             seed.get("notes"),
             now,
             now,
@@ -159,21 +148,18 @@ def upsert_finance_row(conn: sqlite3.Connection, data: dict[str, object]) -> Non
     conn.execute(
         """
         INSERT INTO finance_cases (
-            case_id, client_name, client_phone, service_type, finance_date,
-            contract_sum, currency, paid_amount, due_date, finance_status,
+            case_id, client_name, client_phone, service_type,
+            contract_sum, currency, paid_amount,
             notes, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(case_id) DO UPDATE SET
             client_name=excluded.client_name,
             client_phone=excluded.client_phone,
             service_type=excluded.service_type,
-            finance_date=excluded.finance_date,
             contract_sum=excluded.contract_sum,
             currency=excluded.currency,
             paid_amount=excluded.paid_amount,
-            due_date=excluded.due_date,
-            finance_status=excluded.finance_status,
             notes=excluded.notes,
             updated_at=excluded.updated_at
         """,
@@ -182,12 +168,9 @@ def upsert_finance_row(conn: sqlite3.Connection, data: dict[str, object]) -> Non
             normalize_text(data.get("client_name")),
             client_phone,
             normalize_text(data.get("service_type")),
-            normalize_text(data.get("finance_date")),
             as_float(data.get("contract_sum")),
             str(data.get("currency") or "MKD"),
             as_float(data.get("paid_amount")),
-            normalize_text(data.get("due_date")),
-            str(data.get("finance_status") or "GRAY"),
             normalize_text(data.get("notes")),
             now,
             now,
@@ -298,12 +281,9 @@ def build_finance_case_aggregates(conn: sqlite3.Connection) -> pd.DataFrame:
                 "client_name",
                 "client_phone",
                 "service_type",
-                "finance_date",
                 "contract_sum",
                 "currency",
                 "paid_amount",
-                "due_date",
-                "finance_status",
                 "notes",
                 "created_at",
                 "updated_at",
@@ -313,6 +293,7 @@ def build_finance_case_aggregates(conn: sqlite3.Connection) -> pd.DataFrame:
                 "invoice_total",
                 "paid_invoice_total",
                 "overdue_invoice_count",
+                "overdue_invoice_amount",
                 "paid_total",
                 "remaining",
                 "overdue_amount",
@@ -353,16 +334,19 @@ def build_finance_case_aggregates(conn: sqlite3.Connection) -> pd.DataFrame:
         )
         inv["paid_invoice_total"] = inv["amount"].where(inv["status_norm"] == "PAID", 0.0)
         inv["overdue_invoice_count"] = overdue_mask.astype(int)
+        inv["overdue_invoice_amount"] = inv["amount"].where(overdue_mask, 0.0)
         inv_agg = inv.groupby("case_id", as_index=False).agg(
             invoice_total=("amount", "sum"),
             paid_invoice_total=("paid_invoice_total", "sum"),
             overdue_invoice_count=("overdue_invoice_count", "sum"),
+            overdue_invoice_amount=("overdue_invoice_amount", "sum"),
         )
         out = out.merge(inv_agg, on="case_id", how="left")
     else:
         out["invoice_total"] = 0.0
         out["paid_invoice_total"] = 0.0
         out["overdue_invoice_count"] = 0
+        out["overdue_invoice_amount"] = 0.0
 
     out["contract_sum"] = pd.to_numeric(
         out.get("contract_sum", pd.Series(0.0, index=out.index)),
@@ -392,6 +376,10 @@ def build_finance_case_aggregates(conn: sqlite3.Connection) -> pd.DataFrame:
         out.get("overdue_invoice_count", pd.Series(0, index=out.index)),
         errors="coerce",
     ).fillna(0).astype(int)
+    out["overdue_invoice_amount"] = pd.to_numeric(
+        out.get("overdue_invoice_amount", pd.Series(0.0, index=out.index)),
+        errors="coerce",
+    ).fillna(0.0)
 
     out["paid_total"] = out.apply(
         lambda row: (float(row.get("events_paid_total", 0.0)) if int(row.get("payments_count", 0)) > 0 else float(row.get("paid_amount", 0.0)))
@@ -399,16 +387,12 @@ def build_finance_case_aggregates(conn: sqlite3.Connection) -> pd.DataFrame:
         axis=1,
     )
     out["remaining"] = (out["contract_sum"] - out["paid_total"]).clip(lower=0.0)
-
-    due_dt = pd.to_datetime(
-        out.get("due_date", pd.Series(pd.NaT, index=out.index)),
+    out["overdue_amount"] = pd.to_numeric(
+        out.get("overdue_invoice_amount", pd.Series(0.0, index=out.index)),
         errors="coerce",
-    )
-    today = pd.Timestamp(date.today())
-    overdue_mask = due_dt.notna() & (due_dt.dt.normalize() < today) & (out["remaining"] > 0)
-    out["overdue_amount"] = out["remaining"].where(overdue_mask, 0.0)
+    ).fillna(0.0)
 
-    for column in ["currency", "finance_status", "service_type", "notes"]:
+    for column in ["currency", "service_type", "notes"]:
         series = out.get(column)
         if isinstance(series, pd.Series):
             out[column] = series.fillna("").astype(str)
@@ -432,8 +416,6 @@ def load_finance_snapshot(conn: sqlite3.Connection) -> pd.DataFrame:
     out["finance_paid_total"] = aggregates["paid_total"]
     out["finance_remaining"] = aggregates["remaining"]
     out["finance_overdue_amount"] = aggregates["overdue_amount"]
-    out["finance_due_date"] = pd.to_datetime(aggregates.get("due_date"), errors="coerce")
-    out["finance_status"] = aggregates["finance_status"].fillna("").astype(str)
     out["finance_last_payment_date"] = pd.to_datetime(aggregates.get("last_payment_date"), errors="coerce")
     out["finance_payments_count"] = aggregates["payments_count"]
     out["finance_service_type"] = aggregates["service_type"].fillna("").astype(str)
@@ -465,9 +447,7 @@ def merge_finance_into_cases(df_cases: pd.DataFrame, conn: sqlite3.Connection) -
             errors="coerce",
         ).fillna(0.0)
 
-    out["finance_due_date"] = pd.to_datetime(out.get("finance_due_date"), errors="coerce")
     out["finance_last_payment_date"] = pd.to_datetime(out.get("finance_last_payment_date"), errors="coerce")
-    out["finance_status"] = out.get("finance_status", "").fillna("").astype(str)
     out["finance_currency"] = out.get("finance_currency", "").fillna("").astype(str)
     out["finance_service_type"] = out.get("finance_service_type", "").fillna("").astype(str)
     out["finance_notes"] = out.get("finance_notes", "").fillna("").astype(str)
@@ -494,8 +474,7 @@ def summarize_dashboard(conn: sqlite3.Connection) -> dict[str, Any]:
             "needs_action_count": 0,
         }
 
-    due_dates = pd.to_datetime(aggregates.get("due_date"), errors="coerce")
-    needs_action_mask = (aggregates["remaining"] > 0) & due_dates.notna()
+    needs_action_mask = (aggregates["remaining"] > 0) & (aggregates["overdue_amount"] > 0)
     return {
         "contract_total": float(aggregates["contract_sum"].sum()),
         "paid_total": float(aggregates["paid_total"].sum()),
@@ -517,6 +496,8 @@ def list_finance_case_summaries(
     custom_field_names: Optional[list[str]] = None,
     limit: Optional[int] = None,
     offset: int = 0,
+    sort_by: Optional[str] = None,
+    sort_desc: bool = True,
 ) -> tuple[list[dict[str, Any]], int]:
     df = build_finance_workspace_dataframe(conn)
     if df.empty:
@@ -533,20 +514,18 @@ def list_finance_case_summaries(
 
     if statuses:
         case_status = df["status"].fillna("").astype(str)
-        finance_status = df.get("finance_status", pd.Series([""] * len(df), index=df.index)).fillna("").astype(str)
         if "(Empty)" in statuses:
             non_empty = [status for status in statuses if status != "(Empty)"]
             case_mask = case_status.isin(non_empty) | ~case_status.str.strip().astype(bool)
         else:
             case_mask = case_status.isin(statuses)
-        finance_mask = finance_status.isin(statuses)
-        mask &= case_mask | finance_mask
+        mask &= case_mask
 
     if overdue_only:
         mask &= pd.to_numeric(df.get("finance_overdue_amount"), errors="coerce").fillna(0.0) > 0
 
     if needs_action_only:
-        mask &= (pd.to_numeric(df.get("finance_remaining"), errors="coerce").fillna(0.0) > 0) & pd.to_datetime(df.get("finance_due_date"), errors="coerce").notna()
+        mask &= (pd.to_numeric(df.get("finance_remaining"), errors="coerce").fillna(0.0) > 0) & (pd.to_numeric(df.get("finance_overdue_amount"), errors="coerce").fillna(0.0) > 0)
 
     if search:
         mask &= build_search_mask(df, search)
@@ -562,12 +541,18 @@ def list_finance_case_summaries(
         filtered.get("case_id", pd.Series(dtype="object")).tolist(),
         custom_field_names or [],
     )
-    filtered["_due_date_sort"] = pd.to_datetime(filtered.get("finance_due_date"), errors="coerce")
-    filtered = filtered.sort_values(
-        ["finance_overdue_amount", "finance_remaining", "_due_date_sort", "updated_at"],
-        ascending=[False, False, True, False],
-        na_position="last",
-    )
+    if sort_by and sort_by in filtered.columns:
+        filtered = filtered.sort_values(
+            [sort_by, "case_id"],
+            ascending=[not sort_desc, not sort_desc],
+            na_position="last",
+        )
+    else:
+        filtered = filtered.sort_values(
+            ["finance_overdue_amount", "finance_remaining", "updated_at"],
+            ascending=[False, False, False],
+            na_position="last",
+        )
     if offset > 0:
         filtered = filtered.iloc[offset:]
     if limit is not None:
@@ -575,7 +560,6 @@ def list_finance_case_summaries(
 
     out: list[dict[str, Any]] = []
     for _, row in filtered.iterrows():
-        due_date = parse_date(row.get("finance_due_date"))
         out.append(
             {
                 "case_id": str(row.get("case_id") or "").strip(),
@@ -591,8 +575,6 @@ def list_finance_case_summaries(
                 "contract_amount": as_float(row.get("finance_contract_sum")),
                 "paid_total": as_float(row.get("finance_paid_total")),
                 "remaining": as_float(row.get("finance_remaining")),
-                "due_date": due_date.isoformat() if due_date else None,
-                "finance_status": normalize_text(row.get("finance_status")),
                 "payments_count": int(as_float(row.get("finance_payments_count"))),
                 "overdue_amount": as_float(row.get("finance_overdue_amount")),
                 "currency": normalize_text(row.get("finance_currency")),
@@ -607,21 +589,7 @@ def list_finance_case_summaries(
 
 
 def get_finance_filter_options(conn: sqlite3.Connection) -> dict[str, Any]:
-    case_options = cases_core.get_case_filter_options(conn)
-    finance_statuses = _load_distinct_finance_values(conn, "finance_status")
-
-    values = set(case_options["statuses"])
-    values.update(finance_statuses)
-    has_empty = "(Empty)" in values
-    values.discard("(Empty)")
-    statuses = sorted(values)
-    if has_empty:
-        statuses = ["(Empty)", *statuses]
-
-    return {
-        "request_types": case_options["request_types"],
-        "statuses": statuses,
-    }
+    return cases_core.get_case_filter_options(conn)
 
 
 def get_finance_case_detail_dict(
@@ -667,8 +635,6 @@ def get_finance_case_detail_dict(
     if not contract_sum and aggregate_row:
         contract_sum = as_float(aggregate_row.get("contract_sum"))
         remaining = as_float(aggregate_row.get("remaining"))
-    due_value = finance_row.get("due_date", aggregate_row.get("due_date"))
-    due_date = parse_date(due_value)
 
     shared_name = normalize_text(custom_fields.get("Name / Last name")) or normalize_text(
         finance_row.get("client_name")
@@ -688,14 +654,11 @@ def get_finance_case_detail_dict(
         "client_name": shared_name,
         "client_phone": shared_phone,
         "service_type": normalize_text(finance_row.get("service_type")),
-        "finance_date": normalize_text(finance_row.get("finance_date")),
         "contract_sum": contract_sum,
         "contract_amount": contract_sum,
         "currency": normalize_text(finance_row.get("currency")) or "MKD",
         "paid_total": paid_total,
         "remaining": remaining,
-        "due_date": due_date.isoformat() if due_date else None,
-        "finance_status": normalize_text(finance_row.get("finance_status", aggregate_row.get("finance_status"))),
         "notes": normalize_text(finance_row.get("notes")),
         "invoiced_total": get_invoice_sum_for_case(conn, cid),
         "payments_count": len(payments),
@@ -716,12 +679,9 @@ def upsert_finance_profile(conn: sqlite3.Connection, case_id: str, payload: dict
         "client_name": payload.get("client_name", existing.get("client_name")),
         "client_phone": payload.get("client_phone", existing.get("client_phone")),
         "service_type": payload.get("service_type", existing.get("service_type")),
-        "finance_date": normalize_text(payload.get("finance_date", existing.get("finance_date"))),
         "contract_sum": as_float(payload.get("contract_sum", existing.get("contract_sum"))),
         "currency": payload.get("currency", existing.get("currency")) or "MKD",
         "paid_amount": as_float(payload.get("paid_amount", existing.get("paid_amount"))),
-        "due_date": normalize_text(payload.get("due_date", existing.get("due_date"))),
-        "finance_status": payload.get("finance_status", existing.get("finance_status")) or "GRAY",
         "notes": payload.get("notes", existing.get("notes")),
     }
     upsert_finance_row(conn, data)
@@ -765,12 +725,9 @@ def _load_finance_row(conn: sqlite3.Connection, case_id: str) -> dict[str, Any]:
                 client_name,
                 client_phone,
                 service_type,
-                finance_date,
                 contract_sum,
                 currency,
                 paid_amount,
-                due_date,
-                finance_status,
                 notes,
                 created_at,
                 updated_at

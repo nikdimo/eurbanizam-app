@@ -27,8 +27,6 @@ class FinanceCaseListItem(BaseModel):
     contract_amount: Optional[float] = None
     paid_total: float = 0.0
     remaining: float = 0.0
-    due_date: Optional[str] = None
-    finance_status: Optional[str] = None
     payments_count: int = 0
     overdue_amount: float = 0.0
     currency: Optional[str] = None
@@ -110,14 +108,11 @@ class FinanceCaseDetail(BaseModel):
     client_name: Optional[str] = None
     client_phone: Optional[str] = None
     service_type: Optional[str] = None
-    finance_date: Optional[str] = None
     contract_sum: float = 0.0
     contract_amount: Optional[float] = None
     currency: Optional[str] = None
     paid_total: float = 0.0
     remaining: float = 0.0
-    due_date: Optional[str] = None
-    finance_status: Optional[str] = None
     notes: Optional[str] = None
     invoiced_total: float = 0.0
     payments_count: int = 0
@@ -133,17 +128,13 @@ class FinanceProfilePayload(BaseModel):
     client_name: Optional[str] = None
     client_phone: Optional[str] = None
     service_type: Optional[str] = None
-    finance_date: Optional[str] = None
     contract_sum: Optional[float] = None
     currency: Optional[str] = None
     paid_amount: Optional[float] = None
-    due_date: Optional[str] = None
-    finance_status: Optional[str] = None
     notes: Optional[str] = None
 
 
 class FinanceOverviewUpdatePayload(BaseModel):
-    finance_status: Optional[str] = None
     phone: Optional[str] = None
     custom_fields: Dict[str, Optional[str]] = Field(default_factory=dict)
 

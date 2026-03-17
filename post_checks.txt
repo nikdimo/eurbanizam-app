@@ -1,0 +1,11 @@
+--- Pre-migration Checks ---
+finance_cases rows: 2
+finance_invoices rows: 2
+finance_payments rows: 0
+finance_case_recipients rows: 1
+
+--- Current Schema ---
+finance_cases columns: case_id, client_name, client_phone, service_type, contract_sum, currency, paid_amount, due_date, finance_status, notes, created_at, updated_at
+finance_invoices columns: invoice_id, case_id, invoice_number, issue_date, due_date, amount, currency, status, client_name, client_email, client_address, service_description, items_json, file_path, reminders_enabled, reminder_first_after_days, reminder_repeat_days, reminder_max_count, reminder_sent_count, last_reminder_sent_at, created_at, updated_at
+finance_payments columns: payment_id, case_id, payment_date, amount, currency, note, created_at, updated_at
+finance_case_recipients columns: case_id, email, last_used_at, label

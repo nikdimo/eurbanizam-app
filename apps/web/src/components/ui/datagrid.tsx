@@ -44,6 +44,8 @@ export type DataTableProps<TData> = {
   totalRows?: number;
   manualPagination?: boolean;
   onPaginationChange?: (pagination: PaginationState) => void;
+  sorting?: SortingState;
+  onSortingChange?: (sorting: SortingState) => void;
 };
 
 type Density = "comfortable" | "compact";
@@ -592,8 +594,12 @@ export function DataTable<TData>({
   totalRows,
   manualPagination = false,
   onPaginationChange,
+  sorting: controlledSorting,
+  onSortingChange,
 }: DataTableProps<TData>) {
-  const [sorting, setSorting] = React.useState<SortingState>([]);
+  const [internalSorting, setInternalSorting] = React.useState<SortingState>([]);
+  const sorting = controlledSorting ?? internalSorting;
+  const setSorting = onSortingChange ?? setInternalSorting;
   const [pagination, setPagination] = React.useState<PaginationState>({
     pageIndex: 0,
     pageSize: initialPageSize,
@@ -697,7 +703,11 @@ export function DataTable<TData>({
     data,
     columns,
     state: { sorting, columnVisibility, columnOrder, pagination },
-    onSortingChange: setSorting,
+    onSortingChange: (updater) => {
+      const next =
+        typeof updater === "function" ? updater(sorting) : updater;
+      setSorting(next);
+    },
     onColumnVisibilityChange: setColumnVisibility,
     onColumnOrderChange: (updater) => {
       const nextOrder =
@@ -717,6 +727,7 @@ export function DataTable<TData>({
       pagination: { pageIndex: 0, pageSize: initialPageSize },
     },
     manualPagination,
+    manualSorting: Boolean(onSortingChange),
     pageCount:
       manualPagination && totalRows != null
         ? Math.max(1, Math.ceil(totalRows / Math.max(pagination.pageSize, 1)))
@@ -849,10 +860,28 @@ export function DataTable<TData>({
               </span>
               <select
                 className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground"
-                value={activePageSize}
+                value={
+                  [25, 50, 100, 200].includes(activePageSize)
+                    ? activePageSize
+                    : "all"
+                }
                 onChange={(event) => {
-                  table.setPageSize(Number(event.target.value));
-                  table.setPageIndex(0);
+                  const nextSize =
+                    event.target.value === "all"
+                      ? resolvedTotalRows > 0
+                        ? resolvedTotalRows
+                        : 10000
+                      : Number(event.target.value);
+
+                  if (manualPagination && onPaginationChange) {
+                    onPaginationChange({
+                      pageIndex: 0,
+                      pageSize: nextSize,
+                    });
+                  } else {
+                    table.setPageSize(nextSize);
+                    table.setPageIndex(0);
+                  }
                 }}
               >
                 {[25, 50, 100, 200].map((size) => (
@@ -860,6 +889,7 @@ export function DataTable<TData>({
                     {size}
                   </option>
                 ))}
+                <option value="all">All</option>
               </select>
             </label>
             <Button
@@ -867,7 +897,16 @@ export function DataTable<TData>({
               variant="ghost"
               size="xs"
               disabled={activePageIndex <= 0}
-              onClick={() => table.previousPage()}
+              onClick={() => {
+                if (manualPagination && onPaginationChange) {
+                  onPaginationChange({
+                    pageIndex: activePageIndex - 1,
+                    pageSize: activePageSize,
+                  });
+                } else {
+                  table.previousPage();
+                }
+              }}
             >
               Previous
             </Button>
@@ -879,7 +918,16 @@ export function DataTable<TData>({
               variant="ghost"
               size="xs"
               disabled={activePageIndex + 1 >= pageCount}
-              onClick={() => table.nextPage()}
+              onClick={() => {
+                if (manualPagination && onPaginationChange) {
+                  onPaginationChange({
+                    pageIndex: activePageIndex + 1,
+                    pageSize: activePageSize,
+                  });
+                } else {
+                  table.nextPage();
+                }
+              }}
             >
               Next
             </Button>

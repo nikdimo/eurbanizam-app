@@ -75,8 +75,6 @@ export const FinanceCaseSchema = z.object({
   contract_amount: z.number().nullable().optional(),
   paid_total: z.number().default(0),
   remaining: z.number().default(0),
-  due_date: z.string().nullable().optional(),
-  finance_status: z.string().nullable().optional(),
   payments_count: z.number().default(0),
   overdue_amount: z.number().default(0),
   currency: z.string().nullable().optional(),
@@ -102,7 +100,6 @@ export type PaginatedFinanceCaseList = z.infer<
 export const FinanceCaseDetailSchema = FinanceCaseSchema.extend({
   client_name: z.string().nullable().optional(),
   client_phone: z.string().nullable().optional(),
-  finance_date: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
   invoiced_total: z.number().default(0),
   payments: z

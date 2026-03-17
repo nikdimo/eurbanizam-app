@@ -26,7 +26,7 @@ def list_cases(
     status: Optional[List[str]] = Query(None),
     date_from: Optional[str] = Query(None, description="ISO date, updated_from"),
     date_to: Optional[str] = Query(None, description="ISO date, updated_to"),
-    limit: int = Query(100, ge=1, le=500),
+    limit: int = Query(100, ge=1, le=10000),
     offset: int = Query(0, ge=0),
     service=Depends(get_cases_service),
 ):
@@ -54,6 +54,8 @@ def query_cases(
         date_to=payload.date_to,
         limit=payload.limit,
         offset=payload.offset,
+        sort_by=payload.sort_by,
+        sort_desc=payload.sort_desc,
     )
 
 

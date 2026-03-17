@@ -3,9 +3,11 @@
 import * as React from "react";
 import {
   BanknoteIcon,
+  CheckIcon,
   ChevronRightIcon,
   CreditCardIcon,
   FileTextIcon,
+  Loader2,
   MailIcon,
   PencilIcon,
   PlusIcon,
@@ -77,11 +79,8 @@ type ProfileDraft = {
   client_name: string;
   client_phone: string;
   service_type: string;
-  finance_date: string;
   contract_sum: string;
   currency: string;
-  due_date: string;
-  finance_status: string;
   notes: string;
 };
 
@@ -205,15 +204,6 @@ const WORKSPACE_TABS: Array<{
   { value: "communication", label: "Communication", icon: MailIcon },
   { value: "profile", label: "Contract Profile", icon: FileTextIcon },
 ];
-
-const FINANCE_STATUS_OPTIONS = [
-  "GRAY",
-  "GREEN",
-  "YELLOW",
-  "RED",
-  "PENDING",
-  "PAID",
-] as const;
 
 const INVOICE_STATUS_OPTIONS = ["DRAFT", "SENT", "PAID", "CANCELLED"] as const;
 const COMMON_CURRENCIES = ["MKD", "EUR", "USD", "GBP"] as const;
@@ -487,11 +477,8 @@ function buildProfileDraft(detail: FinanceCaseDetail): ProfileDraft {
     client_name: getPreferredName(detail),
     client_phone: sharedPhone,
     service_type: String(detail.service_type ?? ""),
-    finance_date: String(detail.finance_date ?? ""),
     contract_sum: String(detail.contract_sum ?? 0),
     currency: String(detail.currency ?? "MKD"),
-    due_date: String(detail.due_date ?? ""),
-    finance_status: String(detail.finance_status ?? "GRAY"),
     notes: String(detail.notes ?? ""),
   };
 }
@@ -561,10 +548,7 @@ function buildNewInvoiceDraft(
   return {
     invoice_number: "",
     issue_date: todayString(),
-    due_date:
-      String(
-        sourceInvoice?.due_date ?? detail.due_date ?? detail.finance_date ?? "",
-      ) || "",
+    due_date: String(sourceInvoice?.due_date ?? "").trim() || "",
     amount: String(
       sourceInvoice?.amount ??
         (detail.remaining > 0 ? detail.remaining : detail.contract_sum),
@@ -806,10 +790,7 @@ function buildTimeline(detail: FinanceCaseDetail): TimelineItem[] {
       kind: "invoice",
       timestamp: detail.updated_at,
       title: "Finance record updated",
-      description: `Finance status ${displayText(detail.finance_status)} · balance ${formatMoney(
-        detail.remaining,
-        detail.currency,
-      )}`,
+      description: `Balance ${formatMoney(detail.remaining, detail.currency)}`,
       tone: "default",
     });
   }
@@ -1131,11 +1112,8 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
     client_name: "",
     client_phone: "",
     service_type: "",
-    finance_date: "",
     contract_sum: "0",
     currency: "MKD",
-    due_date: "",
-    finance_status: "GRAY",
     notes: "",
   });
   const [contactDraft, setContactDraft] = React.useState<ContactDraft>({
@@ -1198,7 +1176,11 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
   const [editingRecipientLabel, setEditingRecipientLabel] =
     React.useState<string>("");
   const [highlightDraft, setHighlightDraft] = React.useState(false);
+  const [profileSaveStatus, setProfileSaveStatus] = React.useState<
+    "idle" | "saving" | "saved"
+  >("idle");
   const draftFormRef = React.useRef<HTMLDivElement | null>(null);
+  const invoiceNumberInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const selectedInvoice =
     data?.invoices.find((invoice) => invoice.invoice_id === selectedInvoiceId) ??
@@ -1271,6 +1253,7 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
       setMessageMode(null);
       setMessageDraft(buildBlankMessageDraft(loadedDetail, initialInvoice));
       setMailResult(null);
+      setActiveTab(loadedDetail.invoices.length === 0 ? "profile" : "workbench");
       setIsLoading(false);
     }
 
@@ -1490,14 +1473,14 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
     setMailResult(null);
   }
 
-  async function handleProfileSave(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  const saveProfile = React.useCallback(async () => {
     const contractSum = toNumber(profileDraft.contract_sum);
     if (contractSum == null) {
       setNotice({ tone: "error", message: "Contract sum must be a valid number." });
       return;
     }
 
+    setProfileSaveStatus("saving");
     setBusyAction("save-profile");
     const sharedClientName = profileDraft.client_name.trim();
     const sharedPhone = profileDraft.client_phone.trim() || contactDraft.phone.trim();
@@ -1514,16 +1497,14 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
         client_name: sharedClientName || null,
         client_phone: sharedPhone || null,
         service_type: profileDraft.service_type || null,
-        finance_date: profileDraft.finance_date || null,
         contract_sum: contractSum,
         currency: profileDraft.currency || null,
-        due_date: profileDraft.due_date || null,
-        finance_status: profileDraft.finance_status || null,
         notes: profileDraft.notes || null,
       },
     );
     if (response.error) {
       setBusyAction(null);
+      setProfileSaveStatus("idle");
       setNotice({ tone: "error", message: response.error });
       return;
     }
@@ -1538,12 +1519,14 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
     setBusyAction(null);
 
     if (overviewResponse.error) {
+      setProfileSaveStatus("idle");
       setNotice({ tone: "error", message: overviewResponse.error });
       return;
     }
 
     const parsed = FinanceCaseDetailSchema.safeParse(overviewResponse.data);
     if (!parsed.success) {
+      setProfileSaveStatus("idle");
       setNotice({
         tone: "error",
         message: "Profile saved, but the response could not be parsed.",
@@ -1555,7 +1538,18 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
     setProfileDraft(buildProfileDraft(parsed.data));
     setContactDraft(buildContactDraft(parsed.data));
     setPaymentDraft(buildPaymentDraft(parsed.data, settings));
-    setNotice({ tone: "success", message: "Contract profile updated." });
+    setProfileSaveStatus("saved");
+    window.setTimeout(() => setProfileSaveStatus("idle"), 2000);
+  }, [
+    caseId,
+    contactDraft,
+    profileDraft,
+    settings,
+  ]);
+
+  function handleProfileSave(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void saveProfile();
   }
 
   async function handlePaymentCreate(event: React.FormEvent<HTMLFormElement>) {
@@ -1734,6 +1728,16 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
     },
     [],
   );
+
+  const goToDraftNewInvoiceAndFocusNumber = React.useCallback(() => {
+    if (!data) return;
+    prepareNewInvoice(selectedInvoice ?? undefined);
+    setActiveTab("workbench");
+    scrollDraftIntoView("invoice");
+    window.setTimeout(() => {
+      invoiceNumberInputRef.current?.focus();
+    }, 150);
+  }, [data, selectedInvoice, scrollDraftIntoView]);
 
   async function handleInvoiceDelete(invoice: FinanceInvoice) {
     if (
@@ -1979,7 +1983,6 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
         )} · last updated ${formatDateTime(data.updated_at)}`}
         actions={
           <>
-            <StatusBadge status={data.finance_status} />
             <Button
               variant="outline"
               size="sm"
@@ -2007,9 +2010,6 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                   Finance workspace
                 </span>
                 {data.status ? <StatusBadge status={data.status} /> : null}
-                {data.finance_status ? (
-                  <StatusBadge status={data.finance_status} />
-                ) : null}
               </div>
 
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -2049,9 +2049,7 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                 />
                 <InsightItem
                   title={`Service: ${displayText(data.service_type)}`}
-                  description={`Due ${formatDate(data.due_date)} · Finance date ${formatDate(
-                    data.finance_date,
-                  )}`}
+                  description={displayText(data.service_type) ? "Contract service type" : ""}
                   tone="default"
                 />
                 <InsightItem
@@ -2208,18 +2206,6 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                         }
                       />
                     </Field>
-                    <Field label="Finance date">
-                      <Input
-                        type="date"
-                        value={profileDraft.finance_date}
-                        onChange={(event) =>
-                          setProfileDraft((current) => ({
-                            ...current,
-                            finance_date: event.target.value,
-                          }))
-                        }
-                      />
-                    </Field>
                     <Field label="Contract sum">
                       <Input
                         inputMode="decimal"
@@ -2249,40 +2235,6 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                           {currencyOptions.map((currency) => (
                             <SelectItem key={currency} value={currency}>
                               {currency}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    <Field label="Due date">
-                      <Input
-                        type="date"
-                        value={profileDraft.due_date}
-                        onChange={(event) =>
-                          setProfileDraft((current) => ({
-                            ...current,
-                            due_date: event.target.value,
-                          }))
-                        }
-                      />
-                    </Field>
-                    <Field label="Finance status">
-                      <Select
-                        value={profileDraft.finance_status || "GRAY"}
-                        onValueChange={(value) =>
-                          setProfileDraft((current) => ({
-                            ...current,
-                            finance_status: value,
-                          }))
-                        }
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {FINANCE_STATUS_OPTIONS.map((status) => (
-                            <SelectItem key={status} value={status}>
-                              {status}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -3798,7 +3750,6 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
               <span className="rounded-full border border-[#e0e6ef] bg-white px-3 py-1 text-xs font-semibold text-slate-800">
                 {data.case_id}
               </span>
-              <StatusBadge status={data.finance_status || "GRAY"} />
             </div>
             <p className="max-w-5xl text-[0.95rem] leading-7 text-slate-500">
               {secondaryTitle}
@@ -4309,6 +4260,7 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                   <div className="grid gap-4 md:grid-cols-2">
                     <Field label="Invoice Number">
                       <Input
+                        ref={invoiceNumberInputRef}
                         value={invoiceDraft.invoice_number}
                         onChange={(event) =>
                           setInvoiceDraft((current) => ({
@@ -5233,12 +5185,28 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
         </div>
       ) : null}
       {activeTab === "profile" ? (
-        <div className="grid gap-5 px-6 pb-5 xl:grid-cols-2">
-          <SectionCard
-            title="Contract Details"
-            description="Shared case and finance data for this contract. Changes here drive the overviews, communication defaults, and invoice drafts."
-          >
-            <form className="space-y-4" onSubmit={handleProfileSave}>
+        <div className="flex flex-col gap-5 px-6 pb-5">
+          {profileSaveStatus !== "idle" ? (
+            <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+              {profileSaveStatus === "saving" ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  <span>Saving…</span>
+                </>
+              ) : (
+                <>
+                  <CheckIcon className="size-4 text-emerald-600" />
+                  <span className="text-emerald-700">Saved</span>
+                </>
+              )}
+            </div>
+          ) : null}
+          <div className="mx-auto w-full max-w-2xl">
+            <SectionCard
+              title="Contract Details"
+              description="Shared case and finance data for this contract. Changes here drive the overviews, communication defaults, and invoice drafts."
+            >
+            <div className="space-y-4">
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Client Name">
                   <Input
@@ -5249,6 +5217,13 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                         client_name: event.target.value,
                       }))
                     }
+                    onBlur={() => void saveProfile()}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void saveProfile();
+                      }
+                    }}
                   />
                 </Field>
                 <Field label="Company">
@@ -5263,6 +5238,13 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                         },
                       }))
                     }
+                    onBlur={() => void saveProfile()}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void saveProfile();
+                      }
+                    }}
                   />
                 </Field>
                 <Field label="Phone">
@@ -5274,6 +5256,13 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                         client_phone: event.target.value,
                       }))
                     }
+                    onBlur={() => void saveProfile()}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void saveProfile();
+                      }
+                    }}
                   />
                 </Field>
                 <Field label="Primary Email">
@@ -5289,6 +5278,13 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                         },
                       }))
                     }
+                    onBlur={() => void saveProfile()}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void saveProfile();
+                      }
+                    }}
                   />
                 </Field>
                 <Field label="Address">
@@ -5303,6 +5299,13 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                         },
                       }))
                     }
+                    onBlur={() => void saveProfile()}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void saveProfile();
+                      }
+                    }}
                   />
                 </Field>
                 <Field
@@ -5320,6 +5323,13 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                         },
                       }))
                     }
+                    onBlur={() => void saveProfile()}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void saveProfile();
+                      }
+                    }}
                   />
                 </Field>
               </div>
@@ -5348,17 +5358,25 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                         contract_sum: event.target.value,
                       }))
                     }
+                    onBlur={() => void saveProfile()}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void saveProfile();
+                      }
+                    }}
                   />
                 </Field>
                 <Field label="Currency">
                   <Select
                     value={profileDraft.currency || "MKD"}
-                    onValueChange={(value) =>
+                    onValueChange={(value) => {
                       setProfileDraft((current) => ({
                         ...current,
                         currency: value,
-                      }))
-                    }
+                      }));
+                      window.setTimeout(() => void saveProfile(), 0);
+                    }}
                   >
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Currency" />
@@ -5372,55 +5390,6 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label="Finance Status">
-                  <Select
-                    value={profileDraft.finance_status || "GRAY"}
-                    onValueChange={(value) =>
-                      setProfileDraft((current) => ({
-                        ...current,
-                        finance_status: value,
-                      }))
-                    }
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {FINANCE_STATUS_OPTIONS.map((status) => (
-                        <SelectItem key={status} value={status}>
-                          {status}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Finance Date">
-                  <Input
-                    type="date"
-                    value={profileDraft.finance_date}
-                    onChange={(event) =>
-                      setProfileDraft((current) => ({
-                        ...current,
-                        finance_date: event.target.value,
-                      }))
-                    }
-                  />
-                </Field>
-                <Field label="Payment Due Date">
-                  <Input
-                    type="date"
-                    value={profileDraft.due_date}
-                    onChange={(event) =>
-                      setProfileDraft((current) => ({
-                        ...current,
-                        due_date: event.target.value,
-                      }))
-                    }
-                  />
-                </Field>
               </div>
 
               <Field label="Case / Service Type">
@@ -5432,6 +5401,13 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                       service_type: event.target.value,
                     }))
                   }
+                  onBlur={() => void saveProfile()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void saveProfile();
+                    }
+                  }}
                 />
               </Field>
 
@@ -5445,6 +5421,13 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                       notes: event.target.value,
                     }))
                   }
+                  onBlur={() => void saveProfile()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void saveProfile();
+                    }
+                  }}
                 />
               </Field>
 
@@ -5462,15 +5445,16 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                         {isDropdown ? (
                           <Select
                             value={value ?? ""}
-                            onValueChange={(nextValue) =>
+                            onValueChange={(nextValue) => {
                               setContactDraft((current) => ({
                                 ...current,
                                 customFields: {
                                   ...current.customFields,
                                   [key]: nextValue,
                                 },
-                              }))
-                            }
+                              }));
+                              window.setTimeout(() => void saveProfile(), 0);
+                            }}
                           >
                             <SelectTrigger className="w-full">
                               <SelectValue placeholder={key} />
@@ -5495,6 +5479,13 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                                 },
                               }))
                             }
+                            onBlur={() => void saveProfile()}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                void saveProfile();
+                              }
+                            }}
                           />
                         )}
                       </Field>
@@ -5503,26 +5494,29 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                 </div>
               ) : null}
 
-              <div className="flex justify-end gap-2">
+              <div className="flex flex-wrap justify-end gap-2">
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => {
-                    const next = buildProfileDraft(data);
-                    setProfileDraft(next);
+                    if (!data) return;
+                    setProfileDraft(buildProfileDraft(data));
                     setContactDraft(buildContactDraft(data));
                   }}
                 >
                   Reset
                 </Button>
-                <Button type="submit" disabled={busyAction === "save-profile"}>
-                  <SaveIcon className="size-4" />
-                  Save Changes
+                <Button
+                  type="button"
+                  onClick={goToDraftNewInvoiceAndFocusNumber}
+                >
+                  <FileTextIcon className="size-4" />
+                  Create invoice / payment
                 </Button>
               </div>
-            </form>
+            </div>
           </SectionCard>
-
+          </div>
         </div>
       ) : null}
     </PageContainer>

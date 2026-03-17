@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import List, Optional
@@ -40,6 +40,8 @@ class CasesService:
         date_to: Optional[str],
         limit: int,
         offset: int,
+        sort_by: Optional[str] = None,
+        sort_desc: bool = True,
     ) -> PaginatedCaseList:
         with db_session(self.db_path) as conn:
             rows, total = cases_core.list_case_dicts(
@@ -52,6 +54,8 @@ class CasesService:
                 custom_field_names=self.get_custom_field_names(),
                 limit=limit,
                 offset=offset,
+                sort_by=sort_by,
+                sort_desc=sort_desc,
             )
         return PaginatedCaseList(
             items=[CaseListItem(**row) for row in rows],

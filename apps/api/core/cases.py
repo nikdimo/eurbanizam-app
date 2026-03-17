@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import sqlite3
 from datetime import datetime, timedelta
@@ -412,6 +412,8 @@ def list_case_dicts(
     custom_field_names: Optional[list[str]] = None,
     limit: Optional[int] = None,
     offset: int = 0,
+    sort_by: Optional[str] = None,
+    sort_desc: bool = True,
 ) -> tuple[list[dict[str, Any]], int]:
     df = prepare_cases_dataframe(conn)
     filtered = apply_case_filters(
@@ -423,7 +425,13 @@ def list_case_dicts(
         date_to=date_to,
     )
     total = len(filtered)
-    if "updated_at" in filtered.columns:
+    if sort_by and sort_by in filtered.columns:
+        filtered = filtered.sort_values(
+            [sort_by, "case_id"],
+            ascending=[not sort_desc, not sort_desc],
+            na_position="last",
+        )
+    elif "updated_at" in filtered.columns:
         filtered = filtered.sort_values(["updated_at", "case_id"], ascending=[False, False], na_position="last")
     elif "case_id" in filtered.columns:
         filtered = filtered.sort_values(["case_id"], ascending=[False])

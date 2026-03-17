@@ -42,8 +42,10 @@ def list_finance_cases(
     date_to: Optional[str] = Query(None),
     overdue_only: bool = Query(False),
     needs_action_only: bool = Query(False),
-    limit: int = Query(100, ge=1, le=500),
+    limit: int = Query(100, ge=1, le=10000),
     offset: int = Query(0, ge=0),
+    sort_by: Optional[str] = Query(None),
+    sort_desc: bool = Query(True),
     service=Depends(get_finance_service),
 ):
     return service.list_cases(
@@ -56,6 +58,8 @@ def list_finance_cases(
         needs_action_only=needs_action_only,
         limit=limit,
         offset=offset,
+        sort_by=sort_by,
+        sort_desc=sort_desc,
     )
 
 

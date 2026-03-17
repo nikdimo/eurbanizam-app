@@ -1,0 +1,2 @@
+/home/niki/migration-staging/old-vps-db.sqlite
+/home/niki/.eurbanizam/db/eurbanizam_local.sqlite

@@ -28,20 +28,16 @@ def ensure_finance_schema(conn: sqlite3.Connection) -> None:
             client_name TEXT,
             client_phone TEXT,
             service_type TEXT,
-            finance_date TEXT,
             contract_sum REAL NOT NULL DEFAULT 0,
             currency TEXT NOT NULL DEFAULT 'MKD',
             paid_amount REAL NOT NULL DEFAULT 0,
-            due_date TEXT,
-            finance_status TEXT NOT NULL DEFAULT 'GRAY',
             notes TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )
         """
     )
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_finance_cases_status ON finance_cases(finance_status)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_finance_cases_due_date ON finance_cases(due_date)")
+    _migrate_finance_cases_drop_contract_date_status(conn)
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS finance_invoices (
@@ -119,6 +115,22 @@ def ensure_finance_schema(conn: sqlite3.Connection) -> None:
         """
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_finance_case_recipients_case_id ON finance_case_recipients(case_id)")
+
+
+def _migrate_finance_cases_drop_contract_date_status(conn: sqlite3.Connection) -> None:
+    """Drop contract-level finance_date, due_date, finance_status from finance_cases if present (SQLite 3.35+)."""
+    try:
+        rows = conn.execute("PRAGMA table_info(finance_cases)").fetchall()
+    except sqlite3.Error:
+        return
+    columns = {row[1] for row in rows}
+    for col in ("finance_date", "due_date", "finance_status"):
+        if col in columns:
+            try:
+                conn.execute(f'ALTER TABLE finance_cases DROP COLUMN "{col}"')
+            except sqlite3.OperationalError:
+                pass
+    conn.commit()
     # Add label column if missing (migration for existing DBs)
     try:
         cursor = conn.execute("PRAGMA table_info(finance_case_recipients)")
