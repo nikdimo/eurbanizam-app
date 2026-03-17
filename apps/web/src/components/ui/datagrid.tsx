@@ -812,6 +812,7 @@ export function DataTable<TData>({
               </Button>
             </DialogTrigger>
             <DialogContent
+              aria-describedby={undefined}
               className={cn(
                 "flex h-[90vh] max-h-[90vh] min-w-[88vw] w-[88vw] flex-col overflow-hidden p-0 text-xs",
                 "!max-w-[85rem]",
