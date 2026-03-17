@@ -179,6 +179,90 @@ def upsert_finance_row(conn: sqlite3.Connection, data: dict[str, object]) -> Non
     conn.commit()
 
 
+def sync_finance_client_name_from_case(
+    conn: sqlite3.Connection,
+    case_id: str,
+    client_name: Optional[str],
+) -> None:
+    """Keep finance_cases.client_name aligned with case custom field Name / Last name."""
+    cid = str(case_id or "").strip()
+    if not cid:
+        return
+    ensure_finance_schema(conn)
+    existing = _load_finance_row(conn, cid)
+    name = normalize_text(client_name) or ""
+    if existing:
+        upsert_finance_row(
+            conn,
+            {
+                "case_id": cid,
+                "client_name": name,
+                "client_phone": normalize_text(existing.get("client_phone")) or "",
+                "service_type": normalize_text(existing.get("service_type")) or "",
+                "contract_sum": as_float(existing.get("contract_sum")),
+                "currency": str(existing.get("currency") or "MKD"),
+                "paid_amount": as_float(existing.get("paid_amount")),
+                "notes": normalize_text(existing.get("notes")) or "",
+            },
+        )
+    else:
+        upsert_finance_row(
+            conn,
+            {
+                "case_id": cid,
+                "client_name": name,
+                "client_phone": "",
+                "service_type": "",
+                "contract_sum": 0.0,
+                "currency": "MKD",
+                "paid_amount": 0.0,
+                "notes": "",
+            },
+        )
+
+
+def sync_finance_client_phone_from_case(
+    conn: sqlite3.Connection,
+    case_id: str,
+    client_phone: Optional[str],
+) -> None:
+    """Keep finance_cases.client_phone aligned with case phone (one number per case)."""
+    cid = str(case_id or "").strip()
+    if not cid:
+        return
+    ensure_finance_schema(conn)
+    existing = _load_finance_row(conn, cid)
+    phone = normalize_text(client_phone) or ""
+    if existing:
+        upsert_finance_row(
+            conn,
+            {
+                "case_id": cid,
+                "client_name": normalize_text(existing.get("client_name")) or "",
+                "client_phone": phone,
+                "service_type": normalize_text(existing.get("service_type")) or "",
+                "contract_sum": as_float(existing.get("contract_sum")),
+                "currency": str(existing.get("currency") or "MKD"),
+                "paid_amount": as_float(existing.get("paid_amount")),
+                "notes": normalize_text(existing.get("notes")) or "",
+            },
+        )
+    else:
+        upsert_finance_row(
+            conn,
+            {
+                "case_id": cid,
+                "client_name": "",
+                "client_phone": phone,
+                "service_type": "",
+                "contract_sum": 0.0,
+                "currency": "MKD",
+                "paid_amount": 0.0,
+                "notes": "",
+            },
+        )
+
+
 def sync_case_contact_from_finance(
     conn: sqlite3.Connection,
     case_id: str,

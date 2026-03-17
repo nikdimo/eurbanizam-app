@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { ColumnDef, SortingState } from "@tanstack/react-table";
-import { ChevronDown, Search } from "lucide-react";
+import { ChevronDown, Search, X } from "lucide-react";
 
 import { apiClient } from "@/lib/api/client";
 import { PageContainer } from "@/components/layout/PagePrimitives";
@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -72,6 +73,29 @@ type EditableCase = {
   custom_fields: Record<string, string>;
 };
 
+type NewCaseFinanceDraft = {
+  service_type: string;
+  contract_sum: string;
+  currency: string;
+  paid_amount: string;
+  notes: string;
+};
+
+const emptyNewCaseFinance = (): NewCaseFinanceDraft => ({
+  service_type: "",
+  contract_sum: "",
+  currency: "MKD",
+  paid_amount: "",
+  notes: "",
+});
+
+type NewCaseDraft = {
+  title: string;
+  phone: string;
+  custom_fields: Record<string, string>;
+  finance: NewCaseFinanceDraft;
+};
+
 type CasePatchPayload = Partial<
   Pick<EditableCase, "title" | "status" | "request_type" | "phone">
 > & {
@@ -96,6 +120,10 @@ type PersistedFilterSettings = {
 
 const FILTER_STORAGE_KEY = "cases:working-table-filters";
 const EMPTY_VALUE = "__empty__";
+/** Single client name: case custom field + finance_cases.client_name stay in sync. */
+const CASE_CLIENT_NAME_FIELD = "Name / Last name";
+const CASE_EMAIL_FIELD = "email";
+const CASE_ALT_EMAILS_FIELD = "alternate_emails";
 const RECENT_DAYS = 7;
 const STALE_DAYS = 20;
 const FILTER_APPLY_DELAY_MS = 250;
@@ -658,6 +686,7 @@ function isFixedCaseField(name: string): boolean {
   return (
     normalized === "address" ||
     normalized === "email" ||
+    normalized === "alternate_emails" ||
     normalized === "name / last name"
   );
 }
@@ -678,6 +707,20 @@ function withFixedCaseFieldDefinitions(
     enabled: true,
   });
 
+  const fixedEmail = makeFallbackFieldDefinition("email");
+  map.set("email", {
+    ...(map.get("email") ?? {}),
+    ...fixedEmail,
+    enabled: true,
+  });
+
+  const fixedAltEmails = makeFallbackFieldDefinition("alternate_emails");
+  map.set("alternate_emails", {
+    ...(map.get("alternate_emails") ?? {}),
+    ...fixedAltEmails,
+    enabled: true,
+  });
+
   return Array.from(map.values());
 }
 
@@ -691,6 +734,9 @@ function getCaseFieldLabel(name: string): string {
   }
   if (normalized === "name / last name") {
     return "Client Name";
+  }
+  if (normalized === "alternate_emails") {
+    return "Alternate emails";
   }
   return name;
 }
@@ -985,6 +1031,16 @@ export default function CasesPage() {
     ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
 
+  const [newCaseOpen, setNewCaseOpen] = React.useState(false);
+  const [newCaseDraft, setNewCaseDraft] = React.useState<NewCaseDraft>({
+    title: "",
+    phone: "",
+    custom_fields: {},
+    finance: emptyNewCaseFinance(),
+  });
+  const [isCreating, setIsCreating] = React.useState(false);
+  const [createError, setCreateError] = React.useState<string | null>(null);
+
   const loadFilterOptions = React.useCallback(async () => {
     const res = await apiClient.getParsed(
       "/api/cases/filter-options",
@@ -1215,6 +1271,52 @@ export default function CasesPage() {
   const enabledFieldDefinitions = React.useMemo(
     () => fieldDefinitionsWithFixed.filter((definition) => definition.enabled),
     [fieldDefinitionsWithFixed],
+  );
+
+  const isFinanceFieldName = React.useCallback((name: string): boolean => {
+    const normalized = name.trim().toLowerCase();
+    if (!normalized) {
+      return false;
+    }
+    if (normalized === "finansii") {
+      return true;
+    }
+    if (normalized.includes("company")) {
+      return true;
+    }
+    if (normalized.includes("tax") || normalized.includes("danok")) {
+      return true;
+    }
+    return false;
+  }, []);
+
+  const createFormGeneralFields = React.useMemo(
+    () =>
+      enabledFieldDefinitions.filter((definition) => {
+        const normalized = definition.name.trim().toLowerCase();
+        if (normalized === "phone") {
+          return false;
+        }
+        if (definition.name.trim() === CASE_CLIENT_NAME_FIELD) {
+          return false;
+        }
+        if (definition.name.trim().toLowerCase() === CASE_EMAIL_FIELD) {
+          return false;
+        }
+        if (definition.name.trim().toLowerCase() === CASE_ALT_EMAILS_FIELD) {
+          return false;
+        }
+        return !isFinanceFieldName(definition.name);
+      }),
+    [enabledFieldDefinitions, isFinanceFieldName],
+  );
+
+  const createFormFinanceFields = React.useMemo(
+    () =>
+      enabledFieldDefinitions.filter((definition) =>
+        isFinanceFieldName(definition.name),
+      ),
+    [enabledFieldDefinitions, isFinanceFieldName],
   );
 
   const resolvedDefinitions = React.useMemo(
@@ -1839,6 +1941,100 @@ export default function CasesPage() {
     );
   })();
 
+  const handleCreateCase = React.useCallback(async () => {
+    const title = normalizeEditableValue(newCaseDraft.title);
+    const phone = normalizeEditableValue(newCaseDraft.phone);
+
+    if (!title) {
+      setCreateError("Title is required.");
+      return;
+    }
+
+    setIsCreating(true);
+    setCreateError(null);
+
+    const payload: {
+      title: string;
+      phone?: string;
+      custom_fields?: Record<string, string>;
+      finance?: Record<string, string | number>;
+    } = {
+      title,
+    };
+
+    if (phone) {
+      payload.phone = phone;
+    }
+
+    const customFields: Record<string, string> = {};
+    for (const [key, value] of Object.entries(newCaseDraft.custom_fields)) {
+      const normalizedKey = key.trim();
+      if (!normalizedKey) {
+        continue;
+      }
+      const normalizedValue = normalizeEditableValue(value);
+      if (!normalizedValue) {
+        continue;
+      }
+      customFields[normalizedKey] = normalizedValue;
+    }
+    if (Object.keys(customFields).length > 0) {
+      payload.custom_fields = customFields;
+    }
+
+    const fin = newCaseDraft.finance;
+    const financePayload: Record<string, string | number> = {};
+    const st = normalizeEditableValue(fin.service_type);
+    if (st) {
+      financePayload.service_type = st;
+    }
+    const cur = normalizeEditableValue(fin.currency);
+    if (cur) {
+      financePayload.currency = cur;
+    }
+    const cs = fin.contract_sum.trim();
+    if (cs !== "" && !Number.isNaN(Number.parseFloat(cs))) {
+      financePayload.contract_sum = Number.parseFloat(cs);
+    }
+    const pa = fin.paid_amount.trim();
+    if (pa !== "" && !Number.isNaN(Number.parseFloat(pa))) {
+      financePayload.paid_amount = Number.parseFloat(pa);
+    }
+    const nt = normalizeEditableValue(fin.notes);
+    if (nt) {
+      financePayload.notes = nt;
+    }
+    if (Object.keys(financePayload).length > 0) {
+      payload.finance = financePayload;
+    }
+
+    const res = await apiClient.post<unknown>("/api/cases", payload);
+    if (res.error || !res.data) {
+      setCreateError(res.error ?? "Unable to create case.");
+      setIsCreating(false);
+      return;
+    }
+
+    const parsed = CaseDetailSchema.safeParse(res.data);
+    if (!parsed.success) {
+      setCreateError("Server returned an unexpected case payload.");
+      setIsCreating(false);
+      return;
+    }
+
+    const summary = toCaseSummary(parsed.data);
+    setData((current) => [summary, ...current]);
+    setTotalRows((current) => current + 1);
+    setNewCaseDraft({
+      title: "",
+      phone: "",
+      custom_fields: {},
+      finance: emptyNewCaseFinance(),
+    });
+    setNewCaseOpen(false);
+    setIsCreating(false);
+  }, [newCaseDraft]);
+
   return (
     <>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -1869,14 +2065,29 @@ export default function CasesPage() {
           <div className="grid gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
             <div className="space-y-1.5">
               <Label htmlFor="cases-search">Search</Label>
-              <Input
-                id="cases-search"
-                placeholder="Search case ID, title, names, phones, or text"
-                value={draftFilters.search}
-                onChange={(event) =>
-                  handleImmediateFilterChange({ search: event.target.value })
-                }
-              />
+              <div className="relative overflow-visible">
+                <Input
+                  id="cases-search"
+                  placeholder="Search case ID, title, names, phones, or text"
+                  value={draftFilters.search}
+                  onChange={(event) =>
+                    handleImmediateFilterChange({ search: event.target.value })
+                  }
+                  className="pr-10 !bg-white dark:!bg-white"
+                />
+                {draftFilters.search ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleImmediateFilterChange({ search: "" })
+                    }
+                    className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-muted/90 p-1.5 text-foreground shadow-sm hover:bg-muted"
+                    aria-label="Clear search"
+                  >
+                    <X className="h-4 w-4 shrink-0" />
+                  </button>
+                ) : null}
+              </div>
             </div>
 
             <MultiSelectFilter
@@ -1942,14 +2153,32 @@ export default function CasesPage() {
             </div>
 
             <div className="flex items-end">
-              <Button
-                type="button"
-                variant="ghost"
-                className="w-full"
-                onClick={handleClearFilters}
-              >
-                Clear all
-              </Button>
+              <div className="flex w-full gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1"
+                  onClick={handleClearFilters}
+                >
+                  Clear all
+                </Button>
+                <Button
+                  type="button"
+                  className="flex-1"
+                  onClick={() => {
+                    setNewCaseDraft({
+                      title: "",
+                      phone: "",
+                      custom_fields: {},
+                      finance: emptyNewCaseFinance(),
+                    });
+                    setCreateError(null);
+                    setNewCaseOpen(true);
+                  }}
+                >
+                  New case
+                </Button>
+              </div>
             </div>
           </div>
 
@@ -2018,6 +2247,386 @@ export default function CasesPage() {
           onChanged={refreshAll}
         />
       </PageContainer>
+
+      <Dialog open={newCaseOpen} onOpenChange={setNewCaseOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>New case</DialogTitle>
+            <DialogDescription>
+              Top: client and case contact. Bottom: finance (contract, payments,
+              finance custom fields).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[70vh] space-y-6 overflow-y-auto pr-1 [&_input]:!bg-white [&_textarea]:!bg-white [&_[data-slot=select-trigger]]:!bg-white dark:[&_input]:!bg-white dark:[&_textarea]:!bg-white dark:[&_[data-slot=select-trigger]]:!bg-white">
+            <div className="space-y-4 rounded-2xl border border-border/60 bg-muted/30 p-4">
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">
+                  Client &amp; case
+                </h3>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Title, contact, and other client-side details (same data as the
+                  cases table).
+                </p>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-1.5 md:col-span-2">
+                  <Label htmlFor="new-case-title">Title</Label>
+                  <Input
+                    id="new-case-title"
+                    value={newCaseDraft.title}
+                    onChange={(event) =>
+                      setNewCaseDraft((current) => ({
+                        ...current,
+                        title: event.target.value,
+                      }))
+                    }
+                    placeholder="Enter case title"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="new-case-client-name">Client name</Label>
+                  <Input
+                    id="new-case-client-name"
+                    value={
+                      newCaseDraft.custom_fields[CASE_CLIENT_NAME_FIELD] ?? ""
+                    }
+                    onChange={(event) =>
+                      setNewCaseDraft((current) => ({
+                        ...current,
+                        custom_fields: {
+                          ...current.custom_fields,
+                          [CASE_CLIENT_NAME_FIELD]: event.target.value,
+                        },
+                      }))
+                    }
+                    placeholder="Client name"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="new-case-phone">Phone</Label>
+                  <Input
+                    id="new-case-phone"
+                    value={newCaseDraft.phone}
+                    onChange={(event) =>
+                      setNewCaseDraft((current) => ({
+                        ...current,
+                        phone: event.target.value,
+                      }))
+                    }
+                    placeholder="Phone"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="new-case-email">Email</Label>
+                  <Input
+                    id="new-case-email"
+                    type="email"
+                    autoComplete="email"
+                    value={newCaseDraft.custom_fields[CASE_EMAIL_FIELD] ?? ""}
+                    onChange={(event) =>
+                      setNewCaseDraft((current) => ({
+                        ...current,
+                        custom_fields: {
+                          ...current.custom_fields,
+                          [CASE_EMAIL_FIELD]: event.target.value,
+                        },
+                      }))
+                    }
+                    placeholder="Email"
+                  />
+                </div>
+                <div className="space-y-1.5 md:col-span-2">
+                  <Label htmlFor="new-case-alt-emails">Alternate emails</Label>
+                  <Input
+                    id="new-case-alt-emails"
+                    value={
+                      newCaseDraft.custom_fields[CASE_ALT_EMAILS_FIELD] ?? ""
+                    }
+                    onChange={(event) =>
+                      setNewCaseDraft((current) => ({
+                        ...current,
+                        custom_fields: {
+                          ...current.custom_fields,
+                          [CASE_ALT_EMAILS_FIELD]: event.target.value,
+                        },
+                      }))
+                    }
+                    placeholder="Extra addresses, comma or semicolon separated"
+                  />
+                </div>
+              </div>
+              {createFormGeneralFields.length > 0 ? (
+                <div className="space-y-3 border-t border-border/60 pt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    More client / case details
+                  </p>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {createFormGeneralFields.map((definition) => {
+                      const value =
+                        newCaseDraft.custom_fields[definition.name] ?? "";
+                      if (
+                        definition.type.toLowerCase() === "dropdown" &&
+                        definition.options.length
+                      ) {
+                        return (
+                          <div key={definition.name} className="space-y-1.5">
+                            <Label>{getCaseFieldLabel(definition.name)}</Label>
+                            <Select
+                              value={value || EMPTY_VALUE}
+                              onValueChange={(nextValue) =>
+                                setNewCaseDraft((current) => ({
+                                  ...current,
+                                  custom_fields: {
+                                    ...current.custom_fields,
+                                    [definition.name]:
+                                      nextValue === EMPTY_VALUE
+                                        ? ""
+                                        : nextValue,
+                                  },
+                                }))
+                              }
+                            >
+                              <SelectTrigger className="w-full">
+                                <SelectValue placeholder="Select value" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value={EMPTY_VALUE}>
+                                  Empty
+                                </SelectItem>
+                                {definition.options.map((option) => (
+                                  <SelectItem key={option} value={option}>
+                                    {option}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div key={definition.name} className="space-y-1.5">
+                          <Label htmlFor={`new-case-custom-${definition.name}`}>
+                            {getCaseFieldLabel(definition.name)}
+                          </Label>
+                          <Input
+                            id={`new-case-custom-${definition.name}`}
+                            value={value}
+                            onChange={(event) =>
+                              setNewCaseDraft((current) => ({
+                                ...current,
+                                custom_fields: {
+                                  ...current.custom_fields,
+                                  [definition.name]: event.target.value,
+                                },
+                              }))
+                            }
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="space-y-4 rounded-2xl border border-border/60 bg-muted/40 p-4">
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">Finance</h3>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Contract, payments, and finance-only custom fields.
+                </p>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-1.5 md:col-span-2">
+                  <Label htmlFor="new-case-fin-service-type">Service type</Label>
+                  <Input
+                    id="new-case-fin-service-type"
+                    value={newCaseDraft.finance.service_type}
+                    onChange={(event) =>
+                      setNewCaseDraft((current) => ({
+                        ...current,
+                        finance: {
+                          ...current.finance,
+                          service_type: event.target.value,
+                        },
+                      }))
+                    }
+                    placeholder="e.g. urban planning, permit"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="new-case-fin-contract-sum">Contract amount</Label>
+                  <Input
+                    id="new-case-fin-contract-sum"
+                    type="number"
+                    step="any"
+                    min={0}
+                    value={newCaseDraft.finance.contract_sum}
+                    onChange={(event) =>
+                      setNewCaseDraft((current) => ({
+                        ...current,
+                        finance: {
+                          ...current.finance,
+                          contract_sum: event.target.value,
+                        },
+                      }))
+                    }
+                    placeholder="0"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="new-case-fin-currency">Currency</Label>
+                  <Input
+                    id="new-case-fin-currency"
+                    value={newCaseDraft.finance.currency}
+                    onChange={(event) =>
+                      setNewCaseDraft((current) => ({
+                        ...current,
+                        finance: {
+                          ...current.finance,
+                          currency: event.target.value,
+                        },
+                      }))
+                    }
+                    placeholder="MKD"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="new-case-fin-paid">Paid amount</Label>
+                  <Input
+                    id="new-case-fin-paid"
+                    type="number"
+                    step="any"
+                    min={0}
+                    value={newCaseDraft.finance.paid_amount}
+                    onChange={(event) =>
+                      setNewCaseDraft((current) => ({
+                        ...current,
+                        finance: {
+                          ...current.finance,
+                          paid_amount: event.target.value,
+                        },
+                      }))
+                    }
+                    placeholder="0"
+                  />
+                </div>
+                <div className="space-y-1.5 md:col-span-2">
+                  <Label htmlFor="new-case-fin-notes">Finance notes</Label>
+                  <Textarea
+                    id="new-case-fin-notes"
+                    value={newCaseDraft.finance.notes}
+                    onChange={(event) =>
+                      setNewCaseDraft((current) => ({
+                        ...current,
+                        finance: {
+                          ...current.finance,
+                          notes: event.target.value,
+                        },
+                      }))
+                    }
+                    placeholder="Internal finance notes"
+                    rows={3}
+                    className="resize-y"
+                  />
+                </div>
+              </div>
+              {createFormFinanceFields.length > 0 ? (
+                <div className="space-y-3 border-t border-border/60 pt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Finance custom fields
+                  </p>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {createFormFinanceFields.map((definition) => {
+                      const value =
+                        newCaseDraft.custom_fields[definition.name] ?? "";
+                      if (
+                        definition.type.toLowerCase() === "dropdown" &&
+                        definition.options.length
+                      ) {
+                        return (
+                          <div key={definition.name} className="space-y-1.5">
+                            <Label>{getCaseFieldLabel(definition.name)}</Label>
+                            <Select
+                              value={value || EMPTY_VALUE}
+                              onValueChange={(nextValue) =>
+                                setNewCaseDraft((current) => ({
+                                  ...current,
+                                  custom_fields: {
+                                    ...current.custom_fields,
+                                    [definition.name]:
+                                      nextValue === EMPTY_VALUE
+                                        ? ""
+                                        : nextValue,
+                                  },
+                                }))
+                              }
+                            >
+                              <SelectTrigger className="w-full">
+                                <SelectValue placeholder="Select value" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value={EMPTY_VALUE}>
+                                  Empty
+                                </SelectItem>
+                                {definition.options.map((option) => (
+                                  <SelectItem key={option} value={option}>
+                                    {option}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div key={definition.name} className="space-y-1.5">
+                          <Label htmlFor={`new-case-custom-${definition.name}`}>
+                            {getCaseFieldLabel(definition.name)}
+                          </Label>
+                          <Input
+                            id={`new-case-custom-${definition.name}`}
+                            value={value}
+                            onChange={(event) =>
+                              setNewCaseDraft((current) => ({
+                                ...current,
+                                custom_fields: {
+                                  ...current.custom_fields,
+                                  [definition.name]: event.target.value,
+                                },
+                              }))
+                            }
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+            {createError ? (
+              <p className="text-sm text-destructive">{createError}</p>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setNewCaseOpen(false)}
+              disabled={isCreating}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleCreateCase}
+              disabled={isCreating}
+            >
+              {isCreating ? "Creating..." : "Create case"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={drawerOpen} onOpenChange={setDrawerOpen}>
         <DialogContent className="flex h-[90vh] max-h-[90vh] flex-col overflow-hidden p-0 sm:max-w-4xl">

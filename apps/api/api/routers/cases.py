@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ...core.dependencies import get_cases_service
 from ...schemas.cases import (
+    CaseCreatePayload,
     CaseCustomFieldDefinition,
     CaseDetail,
     CaseFilterOptions,
@@ -79,6 +80,17 @@ def get_case(case_id: str, service=Depends(get_cases_service)):
     case = service.get_case(case_id=case_id)
     if case is None:
         raise HTTPException(status_code=404, detail="Case not found")
+    return case
+
+
+@router.post("/cases", response_model=CaseDetail)
+def create_case(
+    payload: CaseCreatePayload,
+    service=Depends(get_cases_service),
+):
+    case = service.create_case(payload=payload)
+    if case is None:
+        raise HTTPException(status_code=500, detail="Unable to create case")
     return case
 
 

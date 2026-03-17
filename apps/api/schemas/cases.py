@@ -32,6 +32,27 @@ class CaseCustomFieldDefinition(BaseModel):
     scope: str = "case"
 
 
+class CaseCreateFinanceSeed(BaseModel):
+    """Optional fields written to finance_cases when creating a manual case."""
+
+    client_name: Optional[str] = None
+    client_phone: Optional[str] = None
+    service_type: Optional[str] = None
+    contract_sum: Optional[float] = None
+    currency: Optional[str] = None
+    paid_amount: Optional[float] = None
+    notes: Optional[str] = None
+
+
+class CaseCreatePayload(BaseModel):
+    title: str
+    status: Optional[str] = None
+    request_type: Optional[str] = None
+    phone: Optional[str] = None
+    custom_fields: Dict[str, Optional[str]] = Field(default_factory=dict)
+    finance: Optional[CaseCreateFinanceSeed] = None
+
+
 class CaseUpdatePayload(BaseModel):
     status: Optional[str] = None
     title: Optional[str] = None

@@ -1597,7 +1597,7 @@ export default function FinanceDashboardPage() {
                   onChange={(event) =>
                     handleImmediateFilterChange({ search: event.target.value })
                   }
-                  className="pr-10"
+                  className="pr-10 !bg-white dark:!bg-white"
                 />
                 {draftFilters.search ? (
                   <button
