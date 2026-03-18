@@ -1275,6 +1275,14 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
     data && workbenchEmailLogId != null
       ? (data.email_log.find((e) => e.log_id === workbenchEmailLogId) ?? null)
       : null;
+  const invoicesSortedByDueDate = React.useMemo(() => {
+    if (!data) return [];
+    return [...data.invoices].sort((a, b) => {
+      const aMs = parseDateValue(a.due_date)?.getTime() ?? Number.POSITIVE_INFINITY;
+      const bMs = parseDateValue(b.due_date)?.getTime() ?? Number.POSITIVE_INFINITY;
+      return aMs - bMs;
+    });
+  }, [data]);
   const currencyOptions = getCurrencyOptions(data, settings);
   const preferredName = data ? getPreferredName(data, selectedInvoice) : "";
   const rememberedRecipients = data
@@ -1521,6 +1529,22 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
     setMessageMode(nextMode);
     setMessageDraft(buildMessageDraft(nextMode, data, editingInvoice, settings));
     setMailResult(null);
+  }
+
+  function openCommunicationForInvoice(
+    nextMode: MessageMode,
+    invoice: FinanceInvoice,
+  ) {
+    if (!data) {
+      return;
+    }
+
+    setSelectedInvoiceId(invoice.invoice_id);
+    setActiveTab("communication");
+    setMessageMode(nextMode);
+    setMessageDraft(buildMessageDraft(nextMode, data, invoice, settings));
+    setMailResult(null);
+    setCommStep("compose");
   }
 
   const saveProfile = React.useCallback(async () => {
@@ -3939,68 +3963,107 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
           ))}
         </TabsList>
 
-        {recommendation ? (
+        {activeTab === "workbench" ? (
           <div className="px-6 pt-4">
-            <div
-              className={`flex items-center justify-between rounded-lg border px-4 py-2.5 text-sm ${
-                recommendation.tone === "warning"
-                  ? "border-amber-200 bg-amber-50 text-amber-900"
-                  : recommendation.tone === "success"
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-                    : "border-blue-200 bg-blue-50 text-blue-900"
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                {(() => {
-                  if (recommendation.intent === "reminder") {
-                    return (
-                      <AlertTriangleIcon
-                        className={
-                          recommendation.tone === "warning"
-                            ? "h-4 w-4 shrink-0 text-amber-600"
-                            : "h-4 w-4 shrink-0 text-blue-600"
-                        }
-                      />
-                    );
-                  }
-                  if (recommendation.intent === "review") {
-                    return (
-                      <CheckCircle2Icon
-                        className={
-                          recommendation.tone === "success"
-                            ? "h-4 w-4 shrink-0 text-emerald-600"
-                            : "h-4 w-4 shrink-0 text-blue-600"
-                        }
-                      />
-                    );
-                  }
-                  if (recommendation.intent === "contact") {
-                    return (
-                      <SparklesIcon
-                        className="h-4 w-4 shrink-0 text-blue-600"
-                      />
-                    );
-                  }
-                  return (
-                    <PlusIcon className="h-4 w-4 shrink-0 text-blue-600" />
-                  );
-                })()}
-
-                <span className="font-medium">{recommendation.title}</span>
-                <span className="text-xs opacity-75 hidden sm:inline">
-                  — {recommendation.description}
-                </span>
+            <div className="rounded-lg border border-border/70 bg-background/80 p-4 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                  Invoices
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {data.invoices.length} invoice(s)
+                </p>
               </div>
 
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={runRecommendationAction}
-                className="h-7 shrink-0 bg-white/60 hover:bg-white text-xs"
-              >
-                Take action{" "}
-                <ArrowRightIcon className="ml-1.5 h-3 w-3" />
-              </Button>
+              <div className="mt-3">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Invoice</TableHead>
+                      <TableHead>Due</TableHead>
+                      <TableHead>Amount</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="w-[1%] whitespace-nowrap text-right">
+                        Actions
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {invoicesSortedByDueDate.length ? (
+                      invoicesSortedByDueDate.map((invoice) => (
+                        <TableRow key={invoice.invoice_id}>
+                          <TableCell>
+                            <div className="space-y-1">
+                              <p className="font-medium">
+                                {invoice.invoice_number ||
+                                  `#${invoice.invoice_id}`}
+                              </p>
+                            </div>
+                          </TableCell>
+                          <TableCell>{formatDate(invoice.due_date)}</TableCell>
+                          <TableCell>
+                            {formatMoney(invoice.amount, invoice.currency)}
+                          </TableCell>
+                          <TableCell>
+                            <StatusBadge status={invoice.status} />
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                asChild
+                                title="View invoice (print from browser)"
+                              >
+                                <a
+                                  href={`${API_BASE.replace(/\/$/, "")}/api/finance/invoices/${invoice.invoice_id}/html`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  <FileTextIcon className="mr-1 size-4 shrink-0" />
+                                  View
+                                </a>
+                              </Button>
+                              <Button
+                                size="sm"
+                                disabled={isInvoiceClosed(invoice)}
+                                onClick={() =>
+                                  openCommunicationForInvoice(
+                                    "invoice",
+                                    invoice,
+                                  )
+                                }
+                              >
+                                Send invoice email
+                              </Button>
+                              <Button
+                                size="sm"
+                                disabled={isInvoiceClosed(invoice)}
+                                onClick={() =>
+                                  openCommunicationForInvoice(
+                                    "reminder",
+                                    invoice,
+                                  )
+                                }
+                              >
+                                Send reminder
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={5} className="py-6 text-center">
+                          <span className="text-sm text-muted-foreground">
+                            No invoices recorded yet.
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           </div>
         ) : null}
