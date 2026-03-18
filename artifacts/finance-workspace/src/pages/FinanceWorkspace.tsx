@@ -5,7 +5,7 @@ import { StatusBadge } from "@/components/finance/StatusBadge";
 import {
   AlertTriangle, RefreshCw, CheckCircle2, ArrowRight, Wallet,
   FileText, Mail, Clock, Trash2, Plus, Send, Copy, AlertCircle,
-  CreditCard, Play, FileCheck, Save, ChevronDown, ChevronRight, X, Building2
+  CreditCard, Play, FileCheck, Save, ChevronDown, ChevronRight, X, Building2, PencilLine
 } from "lucide-react";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -75,10 +75,11 @@ export default function FinanceWorkspace() {
   const [data, setData] = useState(MOCK_DATA);
   const [activeTab, setActiveTab] = useState("invoices");
 
-  // Invoice/payment draft panel
-  const [draftType, setDraftType] = useState<"invoice" | "payment">("invoice");
+  // Right panel mode
+  const [panelView, setPanelView] = useState<"invoice" | "payment" | "email">("invoice");
   const [activeInvoiceId, setActiveInvoiceId] = useState<number | null>(null);
   const [selectedEmailLog, setSelectedEmailLog] = useState<EmailLog | null>(null);
+  const [panelEmail, setPanelEmail] = useState<EmailLog | null>(null);
 
   const paidTotal = data.payments.reduce((acc, p) => acc + p.amount, 0);
   const invoicedTotal = data.invoices.reduce((acc, i) => acc + i.amount, 0);
@@ -189,7 +190,7 @@ export default function FinanceWorkspace() {
   };
 
   const loadInvoiceIntoForm = (inv: (typeof MOCK_DATA.invoices)[number]) => {
-    setDraftType("invoice");
+    setPanelView("invoice");
     setActiveInvoiceId(inv.invoice_id);
     setInvoiceForm({ invoice_number: inv.invoice_number, status: inv.status, issue_date: inv.issue_date, due_date: inv.due_date, amount: inv.amount.toString(), currency: inv.currency, client_name: inv.client_name, client_email: inv.client_email, client_address: inv.client_address, service_description: inv.service_description, line_items: "", reminders_enabled: inv.reminders_enabled, reminder_first_after_days: inv.reminder_first_after_days, reminder_repeat_days: inv.reminder_repeat_days, reminder_max_count: inv.reminder_max_count });
   };
@@ -266,10 +267,10 @@ export default function FinanceWorkspace() {
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">All Activity</h3>
                   <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={() => { setDraftType("payment"); setActiveInvoiceId(null); }}>
+                    <Button size="sm" variant="outline" onClick={() => { setPanelView("payment"); setActiveInvoiceId(null); }}>
                       <CreditCard className="mr-1.5 h-3.5 w-3.5" /> New Payment
                     </Button>
-                    <Button size="sm" onClick={() => { setDraftType("invoice"); setActiveInvoiceId(null); setInvoiceForm(f => ({ ...f, invoice_number: `INV-${Date.now().toString().slice(-4)}` })); }}>
+                    <Button size="sm" onClick={() => { setPanelView("invoice"); setActiveInvoiceId(null); setInvoiceForm(f => ({ ...f, invoice_number: `INV-${Date.now().toString().slice(-4)}` })); }}>
                       <Plus className="mr-1.5 h-3.5 w-3.5" /> New Invoice
                     </Button>
                   </div>
@@ -373,10 +374,14 @@ export default function FinanceWorkspace() {
                             if (item.type === "email") {
                               const log = item.payload as EmailLog;
                               const isReminder = log.email_type === "reminder";
+                              const isActive = panelView === "email" && panelEmail?.log_id === log.log_id;
                               return (
                                 <div key={item.id} className="relative">
                                   <div className={`absolute -left-[28px] top-1/2 -translate-y-1/2 h-3 w-3 rounded-full border-2 border-background ${isReminder ? "bg-amber-400" : "bg-sky-400"}`} />
-                                  <div className="rounded-xl border bg-card p-4 shadow-xs">
+                                  <button
+                                    className={`w-full text-left rounded-xl border bg-card p-4 shadow-xs transition-all hover:shadow-sm hover:border-foreground/20 ${isActive ? (isReminder ? "ring-2 ring-amber-400 border-amber-300" : "ring-2 ring-sky-400 border-sky-300") : ""}`}
+                                    onClick={() => { setPanelEmail(log); setPanelView("email"); }}
+                                  >
                                     <div className="flex items-start justify-between gap-3">
                                       <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-1.5 mb-1">
@@ -388,11 +393,16 @@ export default function FinanceWorkspace() {
                                         <p className="text-xs text-muted-foreground truncate">To: {log.to_email}</p>
                                         <p className="text-[10px] text-muted-foreground/70 mt-0.5 truncate">{log.subject}</p>
                                       </div>
-                                      <span className="text-[10px] text-muted-foreground/60 shrink-0 whitespace-nowrap">
-                                        {new Date(log.sent_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
-                                      </span>
+                                      <div className="flex items-center gap-2 shrink-0">
+                                        <span className="text-[10px] text-muted-foreground/60 whitespace-nowrap">
+                                          {new Date(log.sent_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                                        </span>
+                                        <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${isActive ? (isReminder ? "bg-amber-100 text-amber-700" : "bg-sky-100 text-sky-700") : "bg-muted text-muted-foreground"}`}>
+                                          {isActive ? "Viewing" : "View →"}
+                                        </span>
+                                      </div>
                                     </div>
-                                  </div>
+                                  </button>
                                 </div>
                               );
                             }
@@ -405,26 +415,96 @@ export default function FinanceWorkspace() {
                 )}
               </div>
 
-              {/* RIGHT: Draft / Edit panel — Invoice or Payment toggle */}
+              {/* RIGHT: Draft / Edit / Email Preview panel */}
               <div className="space-y-0">
-                <Card className="sticky top-[100px]">
+                <Card className="sticky top-[100px] overflow-hidden">
+
+                  {/* ── EMAIL PREVIEW MODE ── */}
+                  {panelView === "email" && panelEmail ? (
+                    <>
+                      <CardHeader className={`border-b pb-3 pt-4 px-5 ${panelEmail.email_type === "reminder" ? "bg-amber-50" : "bg-sky-50"}`}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              {panelEmail.email_type === "reminder"
+                                ? <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
+                                : <FileCheck className="h-4 w-4 text-sky-500 shrink-0" />}
+                              <span className={`text-[10px] font-bold uppercase tracking-wider ${panelEmail.email_type === "reminder" ? "text-amber-700" : "text-sky-700"}`}>
+                                {panelEmail.email_type === "reminder" ? "Reminder Sent" : "Invoice Email Sent"}
+                              </span>
+                            </div>
+                            <p className="text-sm font-semibold leading-tight truncate">{panelEmail.subject}</p>
+                          </div>
+                          <Button
+                            variant="ghost" size="icon"
+                            className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+                            onClick={() => { setPanelView("invoice"); setPanelEmail(null); }}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
+                          <div><span className="font-medium text-foreground">To:</span> {panelEmail.to_email}</div>
+                          <div><span className="font-medium text-foreground">Sent:</span> {formatDateTime(panelEmail.sent_at)}</div>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="px-5 pt-4 pb-5">
+                        <pre className="whitespace-pre-wrap font-sans text-sm text-muted-foreground leading-relaxed">{panelEmail.body_preview || "(No body recorded)"}</pre>
+                      </CardContent>
+                      <CardFooter className="border-t bg-muted/10 px-5 py-3 gap-2">
+                        <Button size="sm" variant="outline" className="flex-1 text-xs" onClick={() => { setPanelView("invoice"); setActiveInvoiceId(null); setPanelEmail(null); }}>
+                          <Plus className="mr-1.5 h-3.5 w-3.5" /> New Invoice
+                        </Button>
+                        <Button size="sm" className="flex-1 text-xs" onClick={() => { setActiveTab("communication"); setCommForm(f => ({ ...f, mode: panelEmail.email_type === "reminder" ? "reminder" : "invoice", to: panelEmail.to_email, subject: panelEmail.subject })); setPanelEmail(null); }}>
+                          <Send className="mr-1.5 h-3.5 w-3.5" /> Reply / Follow up
+                        </Button>
+                      </CardFooter>
+                    </>
+                  ) : (
+                  <>
+                  {/* ── EDIT MODE header ── */}
+                  {activeInvoiceId !== null && panelView === "invoice" ? (
+                    <div className="border-b border-blue-200 bg-blue-50 px-5 pb-3 pt-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <PencilLine className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600">Editing Invoice</span>
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-base font-bold text-foreground">#{invoiceForm.invoice_number}</span>
+                            <StatusBadge status={invoiceForm.status} />
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-0.5 truncate">{invoiceForm.service_description}</p>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 shrink-0 gap-1 border-blue-200 bg-white text-xs text-blue-700 hover:bg-blue-50"
+                          onClick={() => { setActiveInvoiceId(null); setInvoiceForm(f => ({ ...f, invoice_number: "", status: "DRAFT" })); }}
+                        >
+                          <X className="h-3 w-3" /> New
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                  /* ── DRAFT NEW header ── */
                   <CardHeader className="border-b bg-muted/20 pb-3 pt-4 px-5">
                     <div className="flex items-center justify-between">
-                      <CardTitle className="text-sm font-semibold">
-                        {activeInvoiceId ? "Edit Entry" : "Draft New"}
-                      </CardTitle>
+                      <CardTitle className="text-sm font-semibold">Draft New</CardTitle>
                       <div className="flex items-center gap-1 rounded-full border bg-background p-0.5 shadow-sm">
-                        <Button variant={draftType === "invoice" ? "default" : "ghost"} size="sm" className="h-7 rounded-full text-xs px-3" onClick={() => setDraftType("invoice")}>
+                        <Button variant={panelView === "invoice" ? "default" : "ghost"} size="sm" className="h-7 rounded-full text-xs px-3" onClick={() => { setPanelView("invoice"); }}>
                           Invoice
                         </Button>
-                        <Button variant={draftType === "payment" ? "default" : "ghost"} size="sm" className="h-7 rounded-full text-xs px-3" onClick={() => setDraftType("payment")}>
+                        <Button variant={panelView === "payment" ? "default" : "ghost"} size="sm" className="h-7 rounded-full text-xs px-3" onClick={() => { setPanelView("payment"); setActiveInvoiceId(null); }}>
                           Payment
                         </Button>
                       </div>
                     </div>
                   </CardHeader>
+                  )}
 
-                  {draftType === "invoice" ? (
+                  {panelView === "invoice" ? (
                     <>
                       <CardContent className="space-y-4 pt-5 px-5 text-sm">
                         <div className="grid grid-cols-2 gap-3">
@@ -577,6 +657,8 @@ export default function FinanceWorkspace() {
                         </Button>
                       </CardFooter>
                     </>
+                  )}
+                  </>
                   )}
                 </Card>
               </div>
