@@ -3,33 +3,49 @@
 import * as React from "react";
 import {
   BanknoteIcon,
+  ArrowRightIcon,
+  Building2Icon,
+  AlertTriangleIcon,
+  AlertCircleIcon,
+  ChevronDownIcon,
+  ChevronLeftIcon,
   CheckIcon,
+  CheckCircle2Icon,
   ChevronRightIcon,
   CreditCardIcon,
+  ClockIcon,
+  FileCheckIcon,
+  CopyIcon,
+  PencilLineIcon,
   FileTextIcon,
+  PlayIcon,
   Loader2,
   MailIcon,
-  PencilIcon,
   PlusIcon,
+  SendIcon,
   RefreshCwIcon,
   SaveIcon,
   SparklesIcon,
   Trash2Icon,
   WalletIcon,
-  X,
+  XIcon,
 } from "lucide-react";
 
 import { PageContainer } from "@/components/layout/PagePrimitives";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
+  CardFooter,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -49,6 +65,7 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { apiClient, API_BASE } from "@/lib/api/client";
+import { useToast } from "@/hooks/use-toast";
 import {
   CaseCustomFieldDefinition,
   CaseCustomFieldDefinitionSchema,
@@ -58,6 +75,7 @@ import {
   FinanceSettingsSchema,
 } from "@/lib/schemas";
 import { cn } from "@/lib/utils";
+import { StatPill } from "@/components/finance/StatPill";
 
 type WorkspaceTab = "workbench" | "communication" | "profile";
 type WorkbenchDraftMode = "invoice" | "payment";
@@ -114,7 +132,9 @@ type InvoiceDraft = {
   reminder_max_count: string;
 };
 
-type MessageMode = "invoice" | "reminder";
+type MessageMode = "invoice" | "reminder" | "general";
+
+type CommunicationStep = "pick-type" | "pick-invoice" | "compose" | "sent";
 
 type MessageDraft = {
   to_email: string;
@@ -167,6 +187,9 @@ const FIXED_PROFILE_CUSTOM_FIELDS = new Set([
   "company",
 ]);
 
+// Enables the verbatim “Replit UI port” markup inside this component.
+const VERBATIM_REPLIT_UI_PORT = true;
+
 type TimelineBadge = {
   label: string;
   tone: Tone;
@@ -184,6 +207,7 @@ type ActivityRow = {
   currency?: string | null;
   invoiceId?: number;
   paymentId?: number;
+  emailLogId?: number;
   badges?: TimelineBadge[];
 };
 
@@ -604,7 +628,7 @@ function buildMessageDraft(
   return {
     to_email: getPreferredEmail(detail, invoice),
     subject:
-      mode === "invoice"
+      mode === "invoice" || mode === "general"
         ? String(settings?.invoice_email_subject_template ?? "").trim()
           ? renderTemplate(
               String(settings?.invoice_email_subject_template ?? ""),
@@ -613,7 +637,7 @@ function buildMessageDraft(
           : defaultInvoiceSubject(invoice)
         : defaultReminderSubject(invoice, settings),
     body:
-      mode === "invoice"
+      mode === "invoice" || mode === "general"
         ? defaultInvoiceBody(invoice, settings)
         : defaultReminderBody(invoice, settings),
   };
@@ -768,19 +792,20 @@ function buildTimeline(detail: FinanceCaseDetail): TimelineItem[] {
   }
 
   for (const email of detail.email_log) {
+    const emailType = String(email.email_type ?? "").trim().toLowerCase();
     items.push({
       id: `email-${email.log_id}`,
       kind: "email",
       timestamp: email.sent_at ?? email.created_at,
       title:
-        String(email.email_type ?? "").trim().toLowerCase() === "reminder"
+        emailType === "reminder"
           ? "Reminder sent"
-          : "Invoice email sent",
+          : emailType === "general"
+            ? "General email sent"
+            : "Invoice email sent",
       description: `${displayText(email.to_email)} · ${displayText(email.subject)}`,
       tone:
-        String(email.email_type ?? "").trim().toLowerCase() === "reminder"
-          ? "warning"
-          : "default",
+        emailType === "reminder" ? "warning" : "default",
     });
   }
 
@@ -872,18 +897,21 @@ function buildActivityRows(detail: FinanceCaseDetail): ActivityRow[] {
   for (const email of detail.email_log) {
     const isReminder =
       String(email.email_type ?? "").trim().toLowerCase() === "reminder";
+    const isGeneral =
+      String(email.email_type ?? "").trim().toLowerCase() === "general";
 
     rows.push({
       id: `email-${email.log_id}`,
       kind: "email",
       timestamp: email.sent_at ?? email.created_at,
       dateLabel: "Sent",
-      title: isReminder ? "Reminder sent" : "Invoice email sent",
-      description: `To: ${displayText(email.to_email)}`,
+      title: isReminder ? "Reminder sent" : isGeneral ? "General email sent" : "Invoice email sent",
+      description: `${displayText(email.to_email)} · ${displayText(email.subject)}`,
       tone: isReminder ? "warning" : "default",
+      emailLogId: email.log_id,
       badges: [
         {
-          label: isReminder ? "REMINDER" : "INVOICE",
+          label: isReminder ? "REMINDER" : isGeneral ? "GENERAL" : "INVOICE",
           tone: isReminder ? "warning" : "default",
         },
       ],
@@ -895,6 +923,31 @@ function buildActivityRows(detail: FinanceCaseDetail): ActivityRow[] {
     const rightDate = parseDateValue(right.timestamp)?.getTime() ?? 0;
     return rightDate - leftDate;
   });
+}
+
+function groupActivityByCalendarDay(
+  rows: ActivityRow[],
+): { dateLabel: string; rows: ActivityRow[] }[] {
+  const groups: { dateLabel: string; rows: ActivityRow[] }[] = [];
+  for (const row of rows) {
+    const d = parseDateValue(row.timestamp);
+    const dateLabel = d
+      ? d
+          .toLocaleDateString("en-GB", {
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+          })
+          .toUpperCase()
+      : "—";
+    const last = groups[groups.length - 1];
+    if (last && last.dateLabel === dateLabel) {
+      last.rows.push(row);
+    } else {
+      groups.push({ dateLabel, rows: [row] });
+    }
+  }
+  return groups;
 }
 
 function getToneClasses(tone: Tone): string {
@@ -1106,7 +1159,25 @@ function NoticeBanner({
 export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
   const [data, setData] = React.useState<FinanceCaseDetail | null>(null);
   const [settings, setSettings] = React.useState<FinanceSettings | null>(null);
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = React.useState<WorkspaceTab>("workbench");
+  const tabsValue: "invoices" | "communication" | "contract" =
+    activeTab === "workbench"
+      ? "invoices"
+      : activeTab === "communication"
+        ? "communication"
+        : "contract";
+  function handleTabsValueChange(nextValue: string) {
+    if (nextValue === "invoices") {
+      setActiveTab("workbench");
+      return;
+    }
+    if (nextValue === "communication") {
+      setActiveTab("communication");
+      return;
+    }
+    setActiveTab("profile");
+  }
   const [draftMode, setDraftMode] = React.useState<WorkbenchDraftMode>("invoice");
   const [profileDraft, setProfileDraft] = React.useState<ProfileDraft>({
     client_name: "",
@@ -1162,6 +1233,15 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
   );
   const [messageMode, setMessageMode] = React.useState<MessageMode | null>(null);
   const [mailResult, setMailResult] = React.useState<MailResult | null>(null);
+  const [commStep, setCommStep] =
+    React.useState<CommunicationStep>("pick-type");
+  const [expandedLogId, setExpandedLogId] = React.useState<number | null>(null);
+  const [workbenchPanel, setWorkbenchPanel] = React.useState<"draft" | "email">(
+    "draft",
+  );
+  const [workbenchEmailLogId, setWorkbenchEmailLogId] = React.useState<
+    number | null
+  >(null);
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [busyAction, setBusyAction] = React.useState<string | null>(null);
@@ -1170,11 +1250,6 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
     tone: "success" | "error";
     message: string;
   } | null>(null);
-  const [editingRecipientEmail, setEditingRecipientEmail] = React.useState<
-    string | null
-  >(null);
-  const [editingRecipientLabel, setEditingRecipientLabel] =
-    React.useState<string>("");
   const [highlightDraft, setHighlightDraft] = React.useState(false);
   const [profileSaveStatus, setProfileSaveStatus] = React.useState<
     "idle" | "saving" | "saved"
@@ -1192,6 +1267,14 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
   const recommendation = data ? buildRecommendation(data) : null;
   const timeline = data ? buildTimeline(data) : [];
   const activityRows = data ? buildActivityRows(data) : [];
+  const activityByDay = React.useMemo(
+    () => groupActivityByCalendarDay(activityRows),
+    [activityRows],
+  );
+  const workbenchPreviewEmail =
+    data && workbenchEmailLogId != null
+      ? (data.email_log.find((e) => e.log_id === workbenchEmailLogId) ?? null)
+      : null;
   const currencyOptions = getCurrencyOptions(data, settings);
   const preferredName = data ? getPreferredName(data, selectedInvoice) : "";
   const rememberedRecipients = data
@@ -1345,47 +1428,7 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
     return true;
   }
 
-  async function handleDeleteRecipient(email: string) {
-    if (!data) return;
-    setBusyAction("delete-recipient");
-    const path = `/api/finance/cases/${caseId}/recipients/${encodeURIComponent(email)}`;
-    const res = await apiClient.delete(path);
-    setBusyAction(null);
-    if (res.error) {
-      setNotice({ tone: "error", message: res.error });
-      return;
-    }
-    const detailRes = await apiClient.getParsed(
-      `/api/finance/cases/${caseId}`,
-      FinanceCaseDetailSchema,
-    );
-    if (detailRes.data) {
-      setData(detailRes.data);
-      setNotice({ tone: "success", message: "Recipient removed." });
-    }
-  }
-
-  async function handleSaveRecipientLabel(email: string, label: string) {
-    if (!data) return;
-    setBusyAction("update-recipient-label");
-    const path = `/api/finance/cases/${caseId}/recipients/${encodeURIComponent(email)}`;
-    const res = await apiClient.patch(path, { label: label.trim() || null });
-    setBusyAction(null);
-    setEditingRecipientEmail(null);
-    setEditingRecipientLabel("");
-    if (res.error) {
-      setNotice({ tone: "error", message: res.error });
-      return;
-    }
-    const detailRes = await apiClient.getParsed(
-      `/api/finance/cases/${caseId}`,
-      FinanceCaseDetailSchema,
-    );
-    if (detailRes.data) {
-      setData(detailRes.data);
-      setNotice({ tone: "success", message: "Label updated." });
-    }
-  }
+  // Recipient label editing is not part of the current active layout.
 
   function runRecommendationAction() {
     if (!data || !recommendation) {
@@ -1419,12 +1462,15 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
     setMessageMode(nextMode);
     setMessageDraft(buildMessageDraft(nextMode, data, selectedInvoice, settings));
     setMailResult(null);
+    setCommStep("compose");
   }
 
   function prepareNewInvoice(sourceInvoice?: FinanceInvoice | null) {
     if (!data) {
       return;
     }
+    setWorkbenchPanel("draft");
+    setWorkbenchEmailLogId(null);
     setDraftMode("invoice");
     setEditingInvoiceId(null);
     setInvoiceDraft(buildNewInvoiceDraft(data, settings, sourceInvoice));
@@ -1432,6 +1478,8 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
   }
 
   function prepareExistingInvoice(invoice: FinanceInvoice) {
+    setWorkbenchPanel("draft");
+    setWorkbenchEmailLogId(null);
     setDraftMode("invoice");
     setEditingInvoiceId(invoice.invoice_id);
     setSelectedInvoiceId(invoice.invoice_id);
@@ -1456,6 +1504,8 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
       return;
     }
 
+    setWorkbenchPanel("draft");
+    setWorkbenchEmailLogId(null);
     setDraftMode("invoice");
     setEditingInvoiceId(null);
     setInvoiceDraft(buildNewInvoiceDraft(data, settings));
@@ -1547,10 +1597,7 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
     settings,
   ]);
 
-  function handleProfileSave(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    void saveProfile();
-  }
+  // Profile submit wrapper not needed in current layout.
 
   async function handlePaymentCreate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1783,7 +1830,7 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
     if (!messageMode) {
       setNotice({
         tone: "error",
-        message: "Choose Invoice or Reminder before sending email.",
+        message: "Choose Invoice, Reminder, or General before sending email.",
       });
       return;
     }
@@ -1795,14 +1842,15 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
     const actionKey = dryRun ? "dry-run-email" : "send-email";
     setBusyAction(actionKey);
     const endpoint =
-      messageMode === "invoice"
-        ? `/api/finance/invoices/${selectedInvoice.invoice_id}/send-email`
-        : `/api/finance/invoices/${selectedInvoice.invoice_id}/send-reminder`;
+      messageMode === "reminder"
+        ? `/api/finance/invoices/${selectedInvoice.invoice_id}/send-reminder`
+        : `/api/finance/invoices/${selectedInvoice.invoice_id}/send-email`;
     const response = await apiClient.post<MailResult>(endpoint, {
       to_email: messageDraft.to_email,
       subject: messageDraft.subject,
       body: messageDraft.body,
       dry_run: dryRun,
+      email_type: messageMode,
     });
     setBusyAction(null);
 
@@ -1828,7 +1876,13 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
         tone: "success",
         message:
           response.data.message ??
-          `${messageMode === "invoice" ? "Invoice" : "Reminder"} draft generated.`,
+          `${
+            messageMode === "invoice"
+              ? "Invoice"
+              : messageMode === "reminder"
+                ? "Reminder"
+                : "General"
+          } draft generated.`,
       });
       return;
     }
@@ -1836,11 +1890,19 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
     await refreshCase({
       successMessage:
         response.data.message ??
-        `${messageMode === "invoice" ? "Invoice" : "Reminder"} email sent to ${displayText(
+        `${
+          messageMode === "invoice"
+            ? "Invoice"
+            : messageMode === "reminder"
+              ? "Reminder"
+              : "General"
+        } email sent to ${displayText(
           response.data.to_email ?? messageDraft.to_email,
         )}.`,
       keepMailResult: true,
     });
+
+    setCommStep("sent");
   }
 
   async function handleSettingsSave(event: React.FormEvent<HTMLFormElement>) {
@@ -1976,32 +2038,34 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
 
   return (
     <>
-      <PageHeader
-        title={data.title ?? "Finance case"}
-        description={`${data.case_id} · ${displayText(
-          data.request_type,
-        )} · last updated ${formatDateTime(data.updated_at)}`}
-        actions={
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void refreshCase()}
-              disabled={busyAction != null}
-            >
-              <RefreshCwIcon className="size-4" />
-              Refresh
-            </Button>
-          </>
-        }
-      />
+      <div className="hidden">
+        <PageHeader
+          title={data.title ?? "Finance case"}
+          description={`${data.case_id} · ${displayText(
+            data.request_type,
+          )} · last updated ${formatDateTime(data.updated_at)}`}
+          actions={
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void refreshCase()}
+                disabled={busyAction != null}
+              >
+                <RefreshCwIcon className="size-4" />
+                Refresh
+              </Button>
+            </>
+          }
+        />
+      </div>
 
       <PageContainer className="gap-5 overflow-y-auto bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.08),_transparent_30%),radial-gradient(circle_at_top_right,_rgba(251,191,36,0.10),_transparent_26%),linear-gradient(180deg,_rgba(255,255,255,0.96),_rgba(248,250,252,0.96))]">
         {notice ? (
           <NoticeBanner tone={notice.tone}>{notice.message}</NoticeBanner>
         ) : null}
 
-        <section className="relative overflow-hidden rounded-[28px] border border-border/70 bg-background/80 p-5 shadow-sm">
+        <section className="hidden relative overflow-hidden rounded-[28px] border border-border/70 bg-background/80 p-5 shadow-sm">
           <div className="absolute inset-y-0 right-0 w-1/3 bg-[radial-gradient(circle_at_center,_rgba(56,189,248,0.16),_transparent_64%)]" />
           <div className="relative grid gap-6 xl:grid-cols-[1.35fr_0.95fr]">
             <div className="space-y-5">
@@ -2947,6 +3011,17 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                         <AlertTriangleIcon className="size-4" />
                         Send reminder
                       </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setActiveTab("communication");
+                          loadMessageDefaults("general");
+                        }}
+                      >
+                        <MailIcon className="size-4" />
+                        Send general
+                      </Button>
                     </div>
                   ) : null}
                 </div>
@@ -2965,6 +3040,34 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                 {selectedInvoice ? (
             {hasAnyFinanceActivity ? (
               <div className="space-y-4">
+                    {commStep === "sent" ? (
+                      <div className="rounded-[24px] border border-emerald-200 bg-emerald-50 p-4 text-emerald-950">
+                        <p className="text-sm font-semibold">Email sent.</p>
+                        <p className="mt-1 text-sm opacity-90">
+                          You can send another message or review the updated email history.
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => {
+                              setMailResult(null);
+                              setCommStep("pick-type");
+                              setMessageMode(null);
+                            }}
+                          >
+                            Send another
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setCommStep("compose")}
+                            disabled={messageMode == null}
+                          >
+                            Back to compose
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
                     <div className="flex flex-wrap gap-2">
                       <Button
                         size="sm"
@@ -2981,6 +3084,14 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                       >
                         <AlertTriangleIcon className="size-4" />
                         Reminder
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={messageMode === "general" ? "default" : "outline"}
+                        onClick={() => loadMessageDefaults("general")}
+                      >
+                        <MailIcon className="size-4" />
+                        General
                       </Button>
                     </div>
 
@@ -3739,7 +3850,7 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
   );
 
   return (
-    <PageContainer className="gap-5 overflow-visible rounded-none border-0 bg-[#f5f7fb] p-0 shadow-none">
+    <PageContainer className="financeWorkspaceTokens gap-5 overflow-visible rounded-none border-0 bg-[#f5f7fb] p-0 shadow-none">
       <section className="border-b border-[#d8dde6] bg-[#fffdf8]">
         <div className="flex flex-col gap-5 px-6 py-5 xl:flex-row xl:items-start xl:justify-between">
           <div className="min-w-0 space-y-2">
@@ -3802,168 +3913,1180 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
         </div>
       </section>
 
-      {notice ? (
-        <div className="mx-6">
-          <NoticeBanner tone={notice.tone}>{notice.message}</NoticeBanner>
-        </div>
-      ) : null}
+      <Tabs
+        value={tabsValue}
+        onValueChange={handleTabsValueChange}
+        className="w-full"
+      >
+        <div className="sticky top-0 z-10 bg-background shadow-sm">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-6 py-3 border-b">
+            <div className="flex items-center gap-2 min-w-0">
+              <h1 className="text-base font-semibold tracking-tight truncate">
+                {data.title ?? "Finance case"}
+              </h1>
+              <Badge variant="outline" className="font-mono text-xs shrink-0">
+                {data.case_id}
+              </Badge>
+              <Badge
+                variant="secondary"
+                className="text-xs shrink-0 hidden sm:inline-flex"
+              >
+                {displayText(data.request_type)}
+              </Badge>
+            </div>
 
-      <div className="border-b border-[#d8dde6] bg-[#fffdf8] px-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap gap-2">
-            {WORKSPACE_TABS.map((tab) => (
-              <TabButton
-                key={tab.value}
-                active={activeTab === tab.value}
-                label={tab.label}
-                icon={tab.icon}
-                onClick={() => setActiveTab(tab.value)}
+            <div className="flex items-center gap-4 ml-auto rounded-lg border bg-card px-4 py-1.5 shadow-xs">
+              <StatPill
+                label="Contract"
+                value={formatMoney(data.contract_sum, data.currency)}
               />
-            ))}
+              <Separator orientation="vertical" className="h-7" />
+              <StatPill
+                label="Invoiced"
+                value={formatMoney(data.invoiced_total, data.currency)}
+              />
+              <Separator orientation="vertical" className="h-7" />
+              <StatPill
+                label="Paid"
+                value={
+                  <span className="text-emerald-600">
+                    {formatMoney(data.paid_total, data.currency)}
+                  </span>
+                }
+              />
+              <Separator orientation="vertical" className="h-7" />
+              <StatPill
+                label="Outstanding"
+                value={
+                  <span
+                    className={
+                      data.remaining > 0
+                        ? "text-amber-600"
+                        : "text-emerald-600"
+                    }
+                  >
+                    {formatMoney(data.remaining, data.currency)}
+                  </span>
+                }
+              />
+              <Separator orientation="vertical" className="h-7" />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground"
+                onClick={() => void refreshCase()}
+                disabled={busyAction != null}
+              >
+                <RefreshCwIcon className="h-3.5 w-3.5" />
+              </Button>
+            </div>
           </div>
-          {activeTab === "workbench" ? (
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => {
-                prepareNewInvoice(selectedInvoice);
-                scrollDraftIntoView("invoice");
-              }}
-            >
-              Create invoice / payment
-            </Button>
-          ) : null}
+
+          <TabsList className="flex w-full justify-start overflow-x-auto rounded-none border-b bg-transparent px-6 py-0">
+            {[
+              {
+                value: "invoices",
+                label: "Invoices & Payments",
+                icon: FileCheckIcon,
+              },
+              { value: "communication", label: "Communication", icon: MailIcon },
+              { value: "contract", label: "Contract Profile", icon: FileTextIcon },
+            ].map(({ value, label, icon: Icon }) => (
+              <TabsTrigger
+                key={value}
+                value={value}
+                className="relative h-10 rounded-none border-b-2 border-transparent px-4 pb-3 pt-2 font-medium text-muted-foreground data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:shadow-none"
+              >
+                <Icon className="mr-2 h-4 w-4" /> {label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
         </div>
-      </div>
+
+        {recommendation ? (
+          <div className="px-6 pt-4">
+            <div
+              className={`flex items-center justify-between rounded-lg border px-4 py-2.5 text-sm ${
+                recommendation.tone === "warning"
+                  ? "border-amber-200 bg-amber-50 text-amber-900"
+                  : recommendation.tone === "success"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                    : "border-blue-200 bg-blue-50 text-blue-900"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                {(() => {
+                  if (recommendation.intent === "reminder") {
+                    return (
+                      <AlertTriangleIcon
+                        className={
+                          recommendation.tone === "warning"
+                            ? "h-4 w-4 shrink-0 text-amber-600"
+                            : "h-4 w-4 shrink-0 text-blue-600"
+                        }
+                      />
+                    );
+                  }
+                  if (recommendation.intent === "review") {
+                    return (
+                      <CheckCircle2Icon
+                        className={
+                          recommendation.tone === "success"
+                            ? "h-4 w-4 shrink-0 text-emerald-600"
+                            : "h-4 w-4 shrink-0 text-blue-600"
+                        }
+                      />
+                    );
+                  }
+                  if (recommendation.intent === "contact") {
+                    return (
+                      <SparklesIcon
+                        className="h-4 w-4 shrink-0 text-blue-600"
+                      />
+                    );
+                  }
+                  return (
+                    <PlusIcon className="h-4 w-4 shrink-0 text-blue-600" />
+                  );
+                })()}
+
+                <span className="font-medium">{recommendation.title}</span>
+                <span className="text-xs opacity-75 hidden sm:inline">
+                  — {recommendation.description}
+                </span>
+              </div>
+
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={runRecommendationAction}
+                className="h-7 shrink-0 bg-white/60 hover:bg-white text-xs"
+              >
+                Take action{" "}
+                <ArrowRightIcon className="ml-1.5 h-3 w-3" />
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </Tabs>
 
       {activeTab === "workbench" ? (
-        <div className="space-y-5 px-6 pb-5">
-          {hasAnyFinanceActivity ? (
-            <SectionCard
-              title="Invoice board"
-              description="Select an invoice to edit, or open it. Use View to see the invoice in your browser and print it as-is."
-              action={
-                <div className="flex flex-wrap gap-2">
-                  {selectedInvoice ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => prepareExistingInvoice(selectedInvoice)}
-                    >
-                      <RefreshCwIcon className="size-4" />
-                      Edit selected
-                    </Button>
-                  ) : null}
-                </div>
-              }
-            >
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Invoice</TableHead>
-                    <TableHead>Due</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="min-w-[80px] whitespace-nowrap">View</TableHead>
-                    <TableHead className="w-[1%] whitespace-nowrap" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.invoices.length ? (
-                    data.invoices.map((invoice) => (
-                      <TableRow
-                        key={invoice.invoice_id}
-                        data-state={
-                          selectedInvoiceId === invoice.invoice_id
-                            ? "selected"
-                            : undefined
-                        }
-                        className="cursor-pointer"
-                        onClick={() => {
-                          setSelectedInvoiceId(invoice.invoice_id);
-                          setEditingInvoiceId(invoice.invoice_id);
-                          setInvoiceDraft(buildExistingInvoiceDraft(invoice));
-                        }}
-                      >
-                        <TableCell>
-                          <div className="space-y-1">
-                            <p className="font-medium">
-                              {invoice.invoice_number || `#${invoice.invoice_id}`}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              Issued {formatDate(invoice.issue_date)}
-                            </p>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="space-y-1">
-                            <p>{formatDate(invoice.due_date)}</p>
-                            {isInvoiceOverdue(invoice) ? (
-                              <p className="text-xs text-red-600">Overdue</p>
-                            ) : null}
-                          </div>
-                        </TableCell>
-                        <TableCell className="font-medium">
-                          {formatMoney(invoice.amount, invoice.currency)}
-                        </TableCell>
-                        <TableCell>
-                          <StatusBadge status={invoice.status} />
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            asChild
-                            title="View invoice (print from browser)"
-                            className="gap-1.5"
-                          >
-                            <a
-                              href={`${API_BASE.replace(
-                                /\/$/,
-                                "",
-                              )}/api/finance/invoices/${invoice.invoice_id}/html`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(event) => event.stopPropagation()}
-                            >
-                              <FileTextIcon className="size-4 shrink-0" />
-                              View
-                            </a>
-                          </Button>
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              void handleInvoiceDelete(invoice);
-                            }}
-                            disabled={
-                              busyAction === `delete-invoice-${invoice.invoice_id}`
-                            }
-                          >
-                            <Trash2Icon className="size-4 text-red-600" />
-                            <span className="sr-only">Delete invoice</span>
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell
-                        colSpan={6}
-                        className="py-6 text-center text-sm text-muted-foreground"
-                      >
-                        No invoices recorded yet.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </SectionCard>
-          ) : null}
+        VERBATIM_REPLIT_UI_PORT ? (
+          <div className="space-y-5 px-6 pb-5">
+            {/* Verbatim Replit UI port: Invoices & Payments */}
+            {(() => {
+              const panelEmail = workbenchPreviewEmail;
+              const panelView: "invoice" | "payment" | "email" =
+                workbenchPanel === "email" && panelEmail
+                  ? "email"
+                  : draftMode;
+              const outstanding = data.remaining;
+              const paidTotal = Math.max(0, data.contract_sum - outstanding);
 
+              return (
+                <div
+                  className="grid gap-6 lg:grid-cols-[1fr_440px]"
+                  data-timeline-count={activityByDay.length}
+                >
+                  {/* LEFT: unified timeline */}
+                  <div className="space-y-2 min-w-0">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                        All Activity
+                      </h3>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setWorkbenchPanel("draft");
+                            setWorkbenchEmailLogId(null);
+                            setDraftMode("payment");
+                            setEditingInvoiceId(null);
+                            setPaymentDraft(buildPaymentDraft(data, settings));
+                          }}
+                        >
+                          <CreditCardIcon className="mr-1.5 h-3.5 w-3.5" />{" "}
+                          New Payment
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            prepareNewInvoice();
+                            setInvoiceDraft((f) => ({
+                              ...f,
+                              invoice_number: `INV-${Date.now()
+                                .toString()
+                                .slice(-4)}`,
+                              status: "DRAFT",
+                            }));
+                          }}
+                        >
+                          <PlusIcon className="mr-1.5 h-3.5 w-3.5" /> New Invoice
+                        </Button>
+                      </div>
+                    </div>
+
+                    {activityByDay.length === 0 ? (
+                      <div className="rounded-xl border border-dashed p-10 text-center">
+                        <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+                          <ClockIcon className="h-5 w-5 text-muted-foreground" />
+                        </div>
+                        <p className="text-sm font-medium text-muted-foreground">
+                          No activity yet
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Create an invoice or log a payment to get started.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="relative ml-5 pb-4">
+                        {/* Timeline vertical line */}
+                        <div className="absolute left-0 top-0 bottom-0 w-px bg-border" />
+
+                        {activityByDay.map(({ dateLabel, rows: groupItems }) => (
+                          <div key={dateLabel} className="mb-2">
+                            {/* Date group separator */}
+                            <div className="relative mb-3 flex items-center gap-3 pl-6">
+                              <div className="absolute -left-[5px] h-2.5 w-2.5 rounded-full border-2 border-background bg-border" />
+                              <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                                {dateLabel}
+                              </span>
+                              <div className="flex-1 h-px bg-border/50" />
+                            </div>
+
+                            {/* Items within this date */}
+                            <div className="space-y-2 pl-6">
+                              {groupItems.map((row) => {
+                                if (row.kind === "invoice") {
+                                  const inv =
+                                    row.invoiceId != null
+                                      ? data.invoices.find(
+                                          (entry) =>
+                                            entry.invoice_id === row.invoiceId,
+                                        ) ?? null
+                                      : null;
+                                  if (!inv) return null;
+
+                                  const isOverdue = isInvoiceOverdue(inv);
+                                  const isActive =
+                                    editingInvoiceId === inv.invoice_id;
+                                  const dotColor =
+                                    inv.status === "PAID"
+                                      ? "bg-emerald-500"
+                                      : isOverdue
+                                        ? "bg-red-500"
+                                        : "bg-blue-500";
+
+                                  return (
+                                    <div key={row.id} className="relative">
+                                      <div
+                                        className={`absolute -left-[28px] top-1/2 -translate-y-1/2 h-3 w-3 rounded-full border-2 border-background ${dotColor}`}
+                                      />
+                                      <button
+                                        className={`group w-full text-left rounded-xl border bg-card p-4 shadow-xs transition-all hover:shadow-md hover:border-primary/40 ${
+                                          isActive
+                                            ? "ring-2 ring-primary/60 border-primary/30 bg-primary/[0.03]"
+                                            : ""
+                                        }`}
+                                        onClick={() => {
+                                          prepareExistingInvoice(inv);
+                                        }}
+                                      >
+                                        <div className="flex items-start justify-between gap-3">
+                                          <div className="flex-1 min-w-0">
+                                            <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                                              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                                                Invoice
+                                              </span>
+                                              <span className="text-[10px] text-muted-foreground">
+                                                ·
+                                              </span>
+                                              <code className="text-xs font-semibold text-foreground">
+                                                #{inv.invoice_number}
+                                              </code>
+                                              <StatusBadge
+                                                status={inv.status}
+                                              />
+                                              {isOverdue && (
+                                                <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-700">
+                                                  <AlertTriangleIcon className="h-2.5 w-2.5" />{" "}
+                                                  Overdue
+                                                </span>
+                                              )}
+                                            </div>
+                                            <p className="text-xs text-muted-foreground truncate">
+                                              {inv.service_description}
+                                            </p>
+                                            <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+                                              Due {formatDate(inv.due_date)}
+                                            </p>
+                                          </div>
+                                          <div className="flex items-center gap-2 shrink-0">
+                                            <span className="text-sm font-bold tabular-nums">
+                                              {formatMoney(
+                                                inv.amount,
+                                                inv.currency,
+                                              )}
+                                            </span>
+                                            <ChevronRightIcon className="h-4 w-4 text-muted-foreground/50 group-hover:text-primary transition-colors" />
+                                          </div>
+                                        </div>
+                                      </button>
+                                    </div>
+                                  );
+                                }
+
+                                if (row.kind === "payment") {
+                                  const p =
+                                    row.paymentId != null
+                                      ? data.payments.find(
+                                          (entry) =>
+                                            entry.payment_id === row.paymentId,
+                                        ) ?? null
+                                      : null;
+                                  if (!p) return null;
+
+                                  return (
+                                    <div key={row.id} className="relative">
+                                      <div className="absolute -left-[28px] top-1/2 -translate-y-1/2 h-3 w-3 rounded-full border-2 border-background bg-emerald-500" />
+                                      <div className="group rounded-xl border bg-card p-4 shadow-xs">
+                                        <div className="flex items-start justify-between gap-3">
+                                          <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-1.5 mb-1">
+                                              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+                                                Payment Received
+                                              </span>
+                                            </div>
+                                            {p.note && (
+                                              <p className="text-xs text-muted-foreground">
+                                                {p.note}
+                                              </p>
+                                            )}
+                                          </div>
+                                          <div className="flex items-center gap-1 shrink-0">
+                                            <span className="text-sm font-bold tabular-nums text-emerald-600">
+                                              +{formatMoney(p.amount, p.currency)}
+                                            </span>
+                                            <Button
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-7 w-7 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all"
+                                              onClick={() => {
+                                                void handlePaymentDelete(p);
+                                              }}
+                                              disabled={
+                                                busyAction ===
+                                                `delete-payment-${p.payment_id}`
+                                              }
+                                            >
+                                              <Trash2Icon className="h-3.5 w-3.5" />
+                                            </Button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                }
+
+                                if (row.kind === "email") {
+                                  const log =
+                                    row.emailLogId != null
+                                      ? data.email_log.find(
+                                          (e) => e.log_id === row.emailLogId,
+                                        ) ?? null
+                                      : null;
+                                  if (!log) return null;
+
+                                  const emailType = String(log.email_type ?? "")
+                                    .trim()
+                                    .toLowerCase();
+                                  const isReminder = emailType === "reminder";
+                                  const isGeneral = emailType === "general";
+                                  const isActive =
+                                    panelView === "email" &&
+                                    panelEmail?.log_id === log.log_id;
+
+                                  return (
+                                    <div key={row.id} className="relative">
+                                      <div
+                                        className={`absolute -left-[28px] top-1/2 -translate-y-1/2 h-3 w-3 rounded-full border-2 border-background ${isReminder ? "bg-amber-400" : "bg-sky-400"}`}
+                                      />
+                                      <button
+                                        className={`w-full text-left rounded-xl border bg-card p-4 shadow-xs transition-all hover:shadow-sm hover:border-foreground/20 ${
+                                          isActive
+                                            ? isReminder
+                                              ? "ring-2 ring-amber-400 border-amber-300"
+                                              : "ring-2 ring-sky-400 border-sky-300"
+                                            : ""
+                                        }`}
+                                        onClick={() => {
+                                          setWorkbenchPanel("email");
+                                          setWorkbenchEmailLogId(log.log_id);
+                                        }}
+                                      >
+                                        <div className="flex items-start justify-between gap-3">
+                                          <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-1.5 mb-1">
+                                              <MailIcon
+                                                className={`h-3 w-3 shrink-0 ${isReminder ? "text-amber-500" : isGeneral ? "text-muted-foreground" : "text-sky-500"}`}
+                                              />
+                                              <span
+                                                className={`text-[10px] font-bold uppercase tracking-wider ${isReminder ? "text-amber-700" : isGeneral ? "text-muted-foreground" : "text-sky-700"}`}
+                                              >
+                                                {isReminder
+                                                  ? "Reminder Sent"
+                                                  : isGeneral
+                                                    ? "General Email Sent"
+                                                    : "Invoice Email Sent"}
+                                              </span>
+                                            </div>
+                                            <p className="text-xs text-muted-foreground truncate">
+                                              To: {log.to_email}
+                                            </p>
+                                            <p className="text-[10px] text-muted-foreground/70 mt-0.5 truncate">
+                                              {log.subject}
+                                            </p>
+                                          </div>
+                                          <div className="flex items-center gap-2 shrink-0">
+                                            <span className="text-[10px] text-muted-foreground/60 whitespace-nowrap">
+                                              {new Date(
+                                                log.sent_at ??
+                                                  log.created_at ??
+                                                  "",
+                                              ).toLocaleTimeString(
+                                                "en-GB",
+                                                {
+                                                  hour: "2-digit",
+                                                  minute: "2-digit",
+                                                },
+                                              )}
+                                            </span>
+                                            <span
+                                              className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${isActive ? (isReminder ? "bg-amber-100 text-amber-700" : "bg-sky-100 text-sky-700") : "bg-muted text-muted-foreground"}`}
+                                            >
+                                              {isActive ? "Viewing" : "View →"}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      </button>
+                                    </div>
+                                  );
+                                }
+
+                                return null;
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* RIGHT: Draft / Edit / Email Preview panel */}
+                  <div className="space-y-0">
+                    <Card className="sticky top-[100px] overflow-hidden">
+                      {/* ── EMAIL PREVIEW MODE ── */}
+                      {panelView === "email" && panelEmail ? (
+                        <>
+                          {(() => {
+                            const emailType = String(
+                              panelEmail.email_type ?? "",
+                            )
+                              .trim()
+                              .toLowerCase();
+                            const isReminder = emailType === "reminder";
+                            const isGeneral = emailType === "general";
+
+                            return (
+                              <>
+                                <CardHeader
+                                  className={`border-b pb-3 pt-4 px-5 ${
+                                    isReminder ? "bg-amber-50" : "bg-sky-50"
+                                  }`}
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <div className="flex items-center gap-2 mb-1">
+                                        {isReminder ? (
+                                          <AlertCircleIcon className="h-4 w-4 text-amber-500 shrink-0" />
+                                        ) : isGeneral ? (
+                                          <MailIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+                                        ) : (
+                                          <FileCheckIcon className="h-4 w-4 text-sky-500 shrink-0" />
+                                        )}
+                                        <span
+                                          className={`text-[10px] font-bold uppercase tracking-wider ${isReminder ? "text-amber-700" : isGeneral ? "text-muted-foreground" : "text-sky-700"}`}
+                                        >
+                                          {isReminder
+                                            ? "Reminder Sent"
+                                            : isGeneral
+                                              ? "General Email Sent"
+                                              : "Invoice Email Sent"}
+                                        </span>
+                                      </div>
+                                      <p className="text-sm font-semibold leading-tight truncate">
+                                        {panelEmail.subject}
+                                      </p>
+                                    </div>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+                                      onClick={() => {
+                                        setWorkbenchPanel("draft");
+                                        setWorkbenchEmailLogId(null);
+                                        setDraftMode("invoice");
+                                      }}
+                                    >
+                                      <XIcon className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                  <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
+                                    <div>
+                                      <span className="font-medium text-foreground">
+                                        To:
+                                      </span>{" "}
+                                      {panelEmail.to_email}
+                                    </div>
+                                    <div>
+                                      <span className="font-medium text-foreground">
+                                        Sent:
+                                      </span>{" "}
+                                      {formatDateTime(panelEmail.sent_at)}
+                                    </div>
+                                  </div>
+                                </CardHeader>
+                                <CardContent className="px-5 pt-4 pb-5">
+                                  <pre className="whitespace-pre-wrap font-sans text-sm text-muted-foreground leading-relaxed">
+                                    {panelEmail.body_preview ||
+                                      "(No body recorded)"}
+                                  </pre>
+                                </CardContent>
+                                <CardFooter className="border-t bg-muted/10 px-5 py-3 gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="flex-1 text-xs"
+                                    onClick={() => {
+                                      prepareNewInvoice();
+                                    }}
+                                  >
+                                    <PlusIcon className="mr-1.5 h-3.5 w-3.5" /> New
+                                    Invoice
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    className="flex-1 text-xs"
+                                    onClick={() => {
+                                      const type: MessageMode =
+                                        emailType === "reminder"
+                                          ? "reminder"
+                                          : emailType === "general"
+                                            ? "general"
+                                            : "invoice";
+                                      setMessageMode(type);
+                                      setMailResult(null);
+                                      setSelectedInvoiceId(
+                                        type === "general"
+                                          ? null
+                                          : panelEmail.invoice_id ?? null,
+                                      );
+                                      setMessageDraft({
+                                        to_email: panelEmail.to_email ?? "",
+                                        subject: `Re: ${panelEmail.subject ?? ""}`,
+                                        body: "",
+                                      });
+                                      setCommStep("compose");
+                                      setActiveTab("communication");
+                                      setWorkbenchPanel("draft");
+                                      setWorkbenchEmailLogId(null);
+                                    }}
+                                  >
+                                    <SendIcon className="mr-1.5 h-3.5 w-3.5" />{" "}
+                                    Reply / Follow up
+                                  </Button>
+                                </CardFooter>
+                              </>
+                            );
+                          })()}
+                        </>
+                      ) : (
+                        <>
+                          {/* ── EDIT MODE header ── */}
+                          {editingInvoiceId !== null &&
+                          panelView === "invoice" ? (
+                            <div className="border-b border-blue-200 bg-blue-50 px-5 pb-3 pt-4">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <PencilLineIcon className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600">
+                                      Editing Invoice
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-base font-bold text-foreground">
+                                      #{invoiceDraft.invoice_number}
+                                    </span>
+                                    <StatusBadge status={invoiceDraft.status} />
+                                  </div>
+                                  <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                                    {invoiceDraft.service_description}
+                                  </p>
+                                </div>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 shrink-0 gap-1 border-blue-200 bg-white text-xs text-blue-700 hover:bg-blue-50"
+                                  onClick={() => {
+                                    setEditingInvoiceId(null);
+                                    setInvoiceDraft((f) => ({
+                                      ...f,
+                                      invoice_number: "",
+                                      status: "DRAFT",
+                                    }));
+                                  }}
+                                >
+                                  <XIcon className="h-3 w-3" /> New
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            /* ── DRAFT NEW header ── */
+                            <CardHeader className="border-b bg-muted/20 pb-3 pt-4 px-5">
+                              <div className="flex items-center justify-between">
+                                <CardTitle className="text-sm font-semibold">
+                                  Draft New
+                                </CardTitle>
+                                <div className="flex items-center gap-1 rounded-full border bg-background p-0.5 shadow-sm">
+                                  <Button
+                                    variant={
+                                      panelView === "invoice"
+                                        ? "default"
+                                        : "ghost"
+                                    }
+                                    size="sm"
+                                    className="h-7 rounded-full text-xs px-3"
+                                    onClick={() => {
+                                      setDraftMode("invoice");
+                                    }}
+                                  >
+                                    Invoice
+                                  </Button>
+                                  <Button
+                                    variant={
+                                      panelView === "payment"
+                                        ? "default"
+                                        : "ghost"
+                                    }
+                                    size="sm"
+                                    className="h-7 rounded-full text-xs px-3"
+                                    onClick={() => {
+                                      setDraftMode("payment");
+                                      setEditingInvoiceId(null);
+                                    }}
+                                  >
+                                    Payment
+                                  </Button>
+                                </div>
+                              </div>
+                            </CardHeader>
+                          )}
+
+                          {panelView === "invoice" ? (
+                            <>
+                              <CardContent className="space-y-4 pt-5 px-5 text-sm">
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div className="space-y-1.5">
+                                    <Label>Invoice Number</Label>
+                                    <Input
+                                      value={invoiceDraft.invoice_number}
+                                      onChange={(e) =>
+                                        setInvoiceDraft((current) => ({
+                                          ...current,
+                                          invoice_number: e.target.value,
+                                        }))
+                                      }
+                                      placeholder="001"
+                                    />
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    <Label>Status</Label>
+                                    <Select
+                                      value={invoiceDraft.status}
+                                      onValueChange={(v) =>
+                                        setInvoiceDraft((current) => ({
+                                          ...current,
+                                          status: v,
+                                        }))
+                                      }
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="DRAFT">
+                                          DRAFT
+                                        </SelectItem>
+                                        <SelectItem value="SENT">
+                                          SENT
+                                        </SelectItem>
+                                        <SelectItem value="PAID">
+                                          PAID
+                                        </SelectItem>
+                                        <SelectItem value="CANCELLED">
+                                          CANCELLED
+                                        </SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div className="space-y-1.5">
+                                    <Label>Issue Date</Label>
+                                    <Input
+                                      type="date"
+                                      value={invoiceDraft.issue_date}
+                                      onChange={(e) =>
+                                        setInvoiceDraft((current) => ({
+                                          ...current,
+                                          issue_date: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    <Label>Due Date</Label>
+                                    <Input
+                                      type="date"
+                                      value={invoiceDraft.due_date}
+                                      onChange={(e) =>
+                                        setInvoiceDraft((current) => ({
+                                          ...current,
+                                          due_date: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="space-y-1.5">
+                                  <Label>Amount</Label>
+                                  <div className="flex gap-2">
+                                    <Input
+                                      type="number"
+                                      value={invoiceDraft.amount}
+                                      onChange={(e) =>
+                                        setInvoiceDraft((current) => ({
+                                          ...current,
+                                          amount: e.target.value,
+                                        }))
+                                      }
+                                      className="flex-1"
+                                    />
+                                    <Select
+                                      value={invoiceDraft.currency}
+                                      onValueChange={(v) =>
+                                        setInvoiceDraft((current) => ({
+                                          ...current,
+                                          currency: v,
+                                        }))
+                                      }
+                                    >
+                                      <SelectTrigger className="w-24">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {currencyOptions.map((currency) => (
+                                          <SelectItem
+                                            key={currency}
+                                            value={currency}
+                                          >
+                                            {currency}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                </div>
+
+                                <Separator />
+
+                                <div className="space-y-1.5">
+                                  <Label>Client Name</Label>
+                                  <Input
+                                    value={invoiceDraft.client_name}
+                                    onChange={(e) =>
+                                      setInvoiceDraft((current) => ({
+                                        ...current,
+                                        client_name: e.target.value,
+                                      }))
+                                    }
+                                  />
+                                </div>
+                                <div className="space-y-1.5">
+                                  <Label>Client Email</Label>
+                                  <Input
+                                    type="email"
+                                    value={invoiceDraft.client_email}
+                                    onChange={(e) =>
+                                      setInvoiceDraft((current) => ({
+                                        ...current,
+                                        client_email: e.target.value,
+                                      }))
+                                    }
+                                  />
+                                </div>
+                                <div className="space-y-1.5">
+                                  <Label>Client Address</Label>
+                                  <Input
+                                    value={invoiceDraft.client_address}
+                                    onChange={(e) =>
+                                      setInvoiceDraft((current) => ({
+                                        ...current,
+                                        client_address: e.target.value,
+                                      }))
+                                    }
+                                  />
+                                </div>
+                                <div className="space-y-1.5">
+                                  <Label>Service Description</Label>
+                                  <Input
+                                    value={invoiceDraft.service_description}
+                                    onChange={(e) =>
+                                      setInvoiceDraft((current) => ({
+                                        ...current,
+                                        service_description: e.target.value,
+                                      }))
+                                    }
+                                  />
+                                </div>
+                                <div className="space-y-1.5">
+                                  <Label>Line Items</Label>
+                                  <Textarea
+                                    rows={2}
+                                    value={invoiceDraft.items_json}
+                                    onChange={(e) =>
+                                      setInvoiceDraft((current) => ({
+                                        ...current,
+                                        items_json: e.target.value,
+                                      }))
+                                    }
+                                    placeholder="Item 1 - 1000 MKD..."
+                                  />
+                                </div>
+
+                                <Separator />
+
+                                <div className="space-y-2.5">
+                                  <div className="flex items-center justify-between">
+                                    <Label
+                                      className="cursor-pointer"
+                                      htmlFor="reminders-toggle"
+                                    >
+                                      Auto Reminders
+                                    </Label>
+                                    <input
+                                      id="reminders-toggle"
+                                      type="checkbox"
+                                      checked={
+                                        invoiceDraft.reminders_enabled ===
+                                        "1"
+                                      }
+                                      onChange={(e) =>
+                                        setInvoiceDraft((current) => ({
+                                          ...current,
+                                          reminders_enabled: e.target.checked
+                                            ? "1"
+                                            : "0",
+                                        }))
+                                      }
+                                      className="h-4 w-4 rounded border-gray-300 text-primary"
+                                    />
+                                  </div>
+                                  {invoiceDraft.reminders_enabled === "1" && (
+                                    <div className="grid grid-cols-3 gap-2">
+                                      <div className="space-y-1">
+                                        <Label className="text-xs text-muted-foreground">
+                                          First after (d)
+                                        </Label>
+                                        <Input
+                                          type="number"
+                                          value={
+                                            invoiceDraft.reminder_first_after_days
+                                          }
+                                          onChange={(e) =>
+                                            setInvoiceDraft((current) => ({
+                                              ...current,
+                                              reminder_first_after_days:
+                                                e.target.value,
+                                            }))
+                                          }
+                                        />
+                                      </div>
+                                      <div className="space-y-1">
+                                        <Label className="text-xs text-muted-foreground">
+                                          Repeat (d)
+                                        </Label>
+                                        <Input
+                                          type="number"
+                                          value={
+                                            invoiceDraft.reminder_repeat_days
+                                          }
+                                          onChange={(e) =>
+                                            setInvoiceDraft((current) => ({
+                                              ...current,
+                                              reminder_repeat_days:
+                                                e.target.value,
+                                            }))
+                                          }
+                                        />
+                                      </div>
+                                      <div className="space-y-1">
+                                        <Label className="text-xs text-muted-foreground">
+                                          Max count
+                                        </Label>
+                                        <Input
+                                          type="number"
+                                          value={
+                                            invoiceDraft.reminder_max_count
+                                          }
+                                          onChange={(e) =>
+                                            setInvoiceDraft((current) => ({
+                                              ...current,
+                                              reminder_max_count:
+                                                e.target.value,
+                                            }))
+                                          }
+                                        />
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </CardContent>
+
+                              <CardFooter className="flex-col gap-2 border-t px-5 pt-4 pb-5">
+                                <div className="flex w-full gap-2">
+                                  <Button
+                                    variant="outline"
+                                    className="flex-1"
+                                    onClick={() => {
+                                      setEditingInvoiceId(null);
+                                      setInvoiceDraft((f) => ({
+                                        ...f,
+                                        invoice_number: `INV-${Date.now()
+                                          .toString()
+                                          .slice(-4)}`,
+                                        status: "DRAFT",
+                                      }));
+                                    }}
+                                  >
+                                    <CopyIcon className="mr-1.5 h-3.5 w-3.5" />{" "}
+                                    Copy to New
+                                  </Button>
+                                  <Button
+                                    className="flex-1"
+                                    onClick={() =>
+                                      void handleInvoiceSave({
+                                        preventDefault: () => undefined,
+                                      } as unknown as React.FormEvent<HTMLFormElement>)
+                                    }
+                                  >
+                                    <SaveIcon className="mr-1.5 h-3.5 w-3.5" />{" "}
+                                    {editingInvoiceId !== null
+                                      ? "Update Invoice"
+                                      : "Create Invoice"}
+                                  </Button>
+                                </div>
+                                <div className="flex w-full gap-2">
+                                  <Button
+                                    variant="outline"
+                                    className="flex-1"
+                                    onClick={() => {
+                                      const invId = editingInvoiceId;
+                                      setMessageMode("invoice");
+                                      setSelectedInvoiceId(invId);
+                                      setMailResult(null);
+                                      if (invId !== null) {
+                                        const inv = data.invoices.find(
+                                          (i) => i.invoice_id === invId,
+                                        );
+                                        if (inv) {
+                                          setMessageDraft(
+                                            buildMessageDraft(
+                                              "invoice",
+                                              data,
+                                              inv,
+                                              settings,
+                                            ),
+                                          );
+                                          setCommStep("compose");
+                                        }
+                                      } else {
+                                        setCommStep("pick-invoice");
+                                      }
+                                      setActiveTab("communication");
+                                    }}
+                                  >
+                                    <SendIcon className="mr-1.5 h-3.5 w-3.5" />{" "}
+                                    Send Invoice
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    className="flex-1"
+                                    onClick={() => {
+                                      const invId = editingInvoiceId;
+                                      setMessageMode("reminder");
+                                      setSelectedInvoiceId(invId);
+                                      setMailResult(null);
+                                      if (invId !== null) {
+                                        const inv = data.invoices.find(
+                                          (i) => i.invoice_id === invId,
+                                        );
+                                        if (inv) {
+                                          setMessageDraft(
+                                            buildMessageDraft(
+                                              "reminder",
+                                              data,
+                                              inv,
+                                              settings,
+                                            ),
+                                          );
+                                          setCommStep("compose");
+                                        }
+                                      } else {
+                                        setCommStep("pick-invoice");
+                                      }
+                                      setActiveTab("communication");
+                                    }}
+                                  >
+                                    <ClockIcon className="mr-1.5 h-3.5 w-3.5" />{" "}
+                                    Send Reminder
+                                  </Button>
+                                </div>
+                              </CardFooter>
+                            </>
+                          ) : (
+                            <>
+                              <CardContent className="space-y-4 pt-5 px-5 text-sm">
+                                <div className="space-y-1.5">
+                                  <Label>Date</Label>
+                                  <Input
+                                    type="date"
+                                    value={paymentDraft.payment_date}
+                                    onChange={(e) =>
+                                      setPaymentDraft((current) => ({
+                                        ...current,
+                                        payment_date: e.target.value,
+                                      }))
+                                    }
+                                  />
+                                </div>
+                                <div className="space-y-1.5">
+                                  <Label>Amount</Label>
+                                  <div className="flex gap-2">
+                                    <Input
+                                      type="number"
+                                      value={paymentDraft.amount}
+                                      onChange={(e) =>
+                                        setPaymentDraft((current) => ({
+                                          ...current,
+                                          amount: e.target.value,
+                                        }))
+                                      }
+                                      className="flex-1"
+                                    />
+                                    <Select
+                                      value={paymentDraft.currency}
+                                      onValueChange={(v) =>
+                                        setPaymentDraft((current) => ({
+                                          ...current,
+                                          currency: v,
+                                        }))
+                                      }
+                                    >
+                                      <SelectTrigger className="w-24">
+                                        <SelectValue placeholder="Currency" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {currencyOptions.map((currency) => (
+                                          <SelectItem
+                                            key={currency}
+                                            value={currency}
+                                          >
+                                            {currency}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                </div>
+                                <div className="space-y-1.5">
+                                  <Label>Note (Optional)</Label>
+                                  <Input
+                                    placeholder="e.g. wire transfer, cash, check"
+                                    value={paymentDraft.note}
+                                    onChange={(e) =>
+                                      setPaymentDraft((current) => ({
+                                        ...current,
+                                        note: e.target.value,
+                                      }))
+                                    }
+                                  />
+                                </div>
+
+                                <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">
+                                  <div className="flex justify-between">
+                                    <span>Contract sum</span>
+                                    <span className="font-medium text-foreground">
+                                      {formatMoney(
+                                        data.contract_sum,
+                                        data.currency,
+                                      )}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span>Paid so far</span>
+                                    <span className="font-medium text-emerald-600">
+                                      {formatMoney(paidTotal, data.currency)}
+                                    </span>
+                                  </div>
+                                  <Separator className="my-1" />
+                                  <div className="flex justify-between font-semibold">
+                                    <span>Outstanding</span>
+                                    <span className="text-amber-600">
+                                      {formatMoney(outstanding, data.currency)}
+                                    </span>
+                                  </div>
+                                </div>
+                              </CardContent>
+                              <CardFooter className="border-t px-5 pt-4 pb-5">
+                                <Button
+                                  className="w-full"
+                                  onClick={() =>
+                                    void handlePaymentCreate({
+                                      preventDefault: () => undefined,
+                                    } as unknown as React.FormEvent<HTMLFormElement>)
+                                  }
+                                >
+                                  <CheckCircle2Icon className="mr-2 h-4 w-4" />{" "}
+                                  Record Payment
+                                </Button>
+                              </CardFooter>
+                            </>
+                          )}
+                        </>
+                      )}
+                    </Card>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        ) : (
+          <div className="space-y-5 px-6 pb-5">
           <div
             className={cn(
               "grid gap-5",
@@ -3984,6 +5107,8 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                   size="sm"
                   variant="outline"
                   onClick={() => {
+                    setWorkbenchPanel("draft");
+                    setWorkbenchEmailLogId(null);
                     setDraftMode("payment");
                     setPaymentDraft(buildPaymentDraft(data, settings));
                   }}
@@ -4002,11 +5127,17 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
               </div>
             </div>
 
-            {activityRows.length ? (
+            {activityByDay.length ? (
               <div className="relative pl-8">
                 <div className="absolute bottom-0 left-[14px] top-0 w-px bg-[#d7deea]" />
-                <div className="space-y-3">
-                  {activityRows.map((row) => {
+                <div className="space-y-8">
+                  {activityByDay.map((dayGroup) => (
+                    <div key={dayGroup.dateLabel} className="space-y-3">
+                      <p className="pl-1 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                        {dayGroup.dateLabel}
+                      </p>
+                      <div className="space-y-3">
+                  {dayGroup.rows.map((row) => {
                     const Icon =
                       row.kind === "payment"
                         ? BanknoteIcon
@@ -4030,7 +5161,15 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                           ) ?? null
                         : null;
                     const rowBody = (
-                      <div className="rounded-[22px] border border-[#d9e0eb] bg-white px-4 py-3 shadow-sm transition-colors hover:border-[#bfd0e6]">
+                      <div
+                        className={cn(
+                          "rounded-[22px] border border-[#d9e0eb] bg-white px-4 py-3 shadow-sm transition-colors hover:border-[#bfd0e6]",
+                          row.kind === "email" &&
+                            workbenchPanel === "email" &&
+                            workbenchEmailLogId === row.emailLogId &&
+                            "border-sky-200 ring-2 ring-sky-200",
+                        )}
+                      >
                         <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                           <div className="min-w-0 space-y-1">
                             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
@@ -4134,6 +5273,10 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                                 <Trash2Icon className="size-4 text-slate-400" />
                                 <span className="sr-only">Delete payment</span>
                               </Button>
+                            ) : row.kind === "email" ? (
+                              <span className="text-xs font-semibold text-sky-600">
+                                View →
+                              </span>
                             ) : row.kind === "invoice" ? (
                               <ChevronRightIcon className="size-4 text-slate-400" />
                             ) : null}
@@ -4167,12 +5310,35 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                           >
                             {rowBody}
                           </div>
+                        ) : row.kind === "email" &&
+                          row.emailLogId != null ? (
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            className="block w-full cursor-pointer text-left"
+                            onClick={() => {
+                              setWorkbenchPanel("email");
+                              setWorkbenchEmailLogId(row.emailLogId!);
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                setWorkbenchPanel("email");
+                                setWorkbenchEmailLogId(row.emailLogId!);
+                              }
+                            }}
+                          >
+                            {rowBody}
+                          </div>
                         ) : (
                           rowBody
                         )}
                       </div>
                     );
                   })}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             ) : null}
@@ -4186,6 +5352,103 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                 highlightDraft && "rounded-[20px] ring-2 ring-primary ring-offset-2",
               )}
             >
+            {workbenchPanel === "email" && workbenchPreviewEmail ? (
+              <SectionCard
+                title={
+                  String(
+                    workbenchPreviewEmail.email_type ?? "",
+                  )
+                    .trim()
+                    .toLowerCase() === "reminder"
+                    ? "Reminder sent"
+                    : String(
+                          workbenchPreviewEmail.email_type ?? "",
+                        )
+                          .trim()
+                          .toLowerCase() === "general"
+                      ? "General email"
+                      : "Invoice email sent"
+                }
+                description={`To ${displayText(workbenchPreviewEmail.to_email)} · ${formatDateTime(workbenchPreviewEmail.sent_at)}`}
+              >
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                      Subject
+                    </p>
+                    <p className="mt-1 text-sm font-medium text-slate-900">
+                      {displayText(workbenchPreviewEmail.subject, "(no subject)")}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                      Body preview
+                    </p>
+                    <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-xl border border-[#e7ebf2] bg-[#fafbfd] p-3 text-xs text-slate-700">
+                      {displayText(
+                        workbenchPreviewEmail.body_preview,
+                        "—",
+                      )}
+                    </pre>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setWorkbenchPanel("draft");
+                        setWorkbenchEmailLogId(null);
+                      }}
+                    >
+                      Back to draft
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        const invId = workbenchPreviewEmail.invoice_id;
+                        const inv =
+                          invId != null
+                            ? data.invoices.find((i) => i.invoice_id === invId)
+                            : selectedInvoice ?? data.invoices[0] ?? null;
+                        if (!inv) {
+                          setNotice({
+                            tone: "error",
+                            message:
+                              "No invoice to attach. Create or select an invoice first.",
+                          });
+                          return;
+                        }
+                        setSelectedInvoiceId(inv.invoice_id);
+                        setEditingInvoiceId(inv.invoice_id);
+                        setInvoiceDraft(buildExistingInvoiceDraft(inv));
+                        const t = String(
+                          workbenchPreviewEmail.email_type ?? "",
+                        )
+                          .trim()
+                          .toLowerCase();
+                        const mode: MessageMode =
+                          t === "reminder"
+                            ? "reminder"
+                            : t === "general"
+                              ? "general"
+                              : "invoice";
+                        setMessageMode(mode);
+                        setMessageDraft(
+                          buildMessageDraft(mode, data, inv, settings),
+                        );
+                        setMailResult(null);
+                        setCommStep("compose");
+                        setActiveTab("communication");
+                        setWorkbenchPanel("draft");
+                        setWorkbenchEmailLogId(null);
+                      }}
+                    >
+                      Open in Communication
+                    </Button>
+                  </div>
+                </div>
+              </SectionCard>
+            ) : (
             <SectionCard
               title={
                 draftMode === "invoice"
@@ -4605,12 +5868,517 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                 </form>
               )}
             </SectionCard>
+            )}
           </div>
           </div>
         </div>
-      ) : null}
+      ) ) : null}
       {activeTab === "communication" ? (
-        <div className="grid gap-5 px-6 pb-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(380px,0.8fr)]">
+        VERBATIM_REPLIT_UI_PORT ? (
+          <div className="grid gap-6 lg:grid-cols-[1fr_400px] px-6 pb-5">
+            {/* Verbatim Replit UI port: Communication */}
+            <Card className="overflow-hidden">
+              {/* ── STEP: pick-type ── */}
+              {commStep === "pick-type" && (
+                <>
+                  <CardHeader className="border-b bg-muted/20 pb-4">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <MailIcon className="h-4 w-4 text-primary" /> New Email
+                    </CardTitle>
+                    <CardDescription>
+                      Choose what you would like to send
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="pt-8 pb-10">
+                    <div className="grid grid-cols-3 gap-4">
+                      <button
+                        className="rounded-xl border-2 border-dashed p-5 text-left transition-all hover:border-sky-400 hover:bg-sky-50 group"
+                        onClick={() => {
+                          setMessageMode("invoice");
+                          setSelectedInvoiceId(null);
+                          setCommStep("pick-invoice");
+                        }}
+                      >
+                        <FileCheckIcon className="h-6 w-6 text-sky-500 mb-3" />
+                        <p className="text-sm font-semibold">Invoice Email</p>
+                        <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                          Send an invoice to the client
+                        </p>
+                      </button>
+                      <button
+                        className="rounded-xl border-2 border-dashed p-5 text-left transition-all hover:border-amber-400 hover:bg-amber-50 group"
+                        onClick={() => {
+                          setMessageMode("reminder");
+                          setSelectedInvoiceId(null);
+                          setCommStep("pick-invoice");
+                        }}
+                      >
+                        <AlertCircleIcon className="h-6 w-6 text-amber-500 mb-3" />
+                        <p className="text-sm font-semibold">
+                          Payment Reminder
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                          Remind client about an outstanding invoice
+                        </p>
+                      </button>
+                      <button
+                        className="rounded-xl border-2 border-dashed p-5 text-left transition-all hover:border-primary hover:bg-primary/5 group"
+                        onClick={() => {
+                          const inv = selectedInvoice ?? data.invoices[0] ?? null;
+                          setMessageMode("general");
+                          setSelectedInvoiceId(null);
+                          setMailResult(null);
+                          setMessageDraft(
+                            inv
+                              ? buildMessageDraft("general", data, inv, settings)
+                              : { to_email: "", subject: "", body: "" },
+                          );
+                          setCommStep("compose");
+                        }}
+                      >
+                        <MailIcon className="h-6 w-6 text-muted-foreground mb-3" />
+                        <p className="text-sm font-semibold">General Email</p>
+                        <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                          Any other message to the client
+                        </p>
+                      </button>
+                    </div>
+                  </CardContent>
+                </>
+              )}
+
+              {/* ── STEP: pick-invoice ── */}
+              {commStep === "pick-invoice" && (
+                <>
+                  <CardHeader className="border-b bg-muted/20 pb-4">
+                    <div className="flex items-center gap-3">
+                      <button
+                        className="text-muted-foreground hover:text-foreground transition-colors"
+                        onClick={() => {
+                          setCommStep("pick-type");
+                          setMessageMode(null);
+                        }}
+                      >
+                        <ChevronLeftIcon className="h-5 w-5" />
+                      </button>
+                      <div>
+                        <CardTitle className="text-base flex items-center gap-2">
+                          {messageMode === "reminder" ? (
+                            <>
+                              <AlertCircleIcon className="h-4 w-4 text-amber-500" />{" "}
+                              Payment Reminder
+                            </>
+                          ) : (
+                            <>
+                              <FileCheckIcon className="h-4 w-4 text-sky-500" />{" "}
+                              Invoice Email
+                            </>
+                          )}
+                        </CardTitle>
+                        <CardDescription>
+                          Select the invoice this email is about
+                        </CardDescription>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-5 pb-6 space-y-3">
+                    {data.invoices.length === 0 && (
+                      <p className="text-sm text-muted-foreground text-center py-10">
+                        No invoices found.
+                      </p>
+                    )}
+                    {data.invoices.map((inv) => {
+                      const isOverdue = isInvoiceOverdue(inv);
+                      return (
+                        <button
+                          key={inv.invoice_id}
+                          className="w-full text-left rounded-xl border-2 border-transparent bg-muted/30 p-4 transition-all hover:border-primary hover:bg-primary/5"
+                          onClick={() => {
+                            if (!messageMode) {
+                              return;
+                            }
+                            setSelectedInvoiceId(inv.invoice_id);
+                            setMessageDraft(
+                              buildMessageDraft(
+                                messageMode,
+                                data,
+                                inv,
+                                settings,
+                              ),
+                            );
+                            setMailResult(null);
+                            setCommStep("compose");
+                          }}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm font-semibold">
+                                  Invoice #{inv.invoice_number}
+                                </span>
+                                <StatusBadge status={inv.status} />
+                                {isOverdue && (
+                                  <span className="text-[10px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded">
+                                    Overdue
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                                {inv.service_description}
+                              </p>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p className="text-sm font-semibold">
+                                {formatMoney(inv.amount, inv.currency)}
+                              </p>
+                              <p className="text-[10px] text-muted-foreground">
+                                Due: {formatDate(inv.due_date)}
+                              </p>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </CardContent>
+                </>
+              )}
+
+              {/* ── STEP: compose ── */}
+              {commStep === "compose" && (
+                <>
+                  <CardHeader className="border-b bg-muted/20 pb-3 pt-4">
+                    <div className="flex items-center gap-3">
+                      <button
+                        className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                        onClick={() => {
+                          if (messageMode === "general") {
+                            setCommStep("pick-type");
+                            setMessageMode(null);
+                          } else {
+                            setCommStep("pick-invoice");
+                            setSelectedInvoiceId(null);
+                          }
+                        }}
+                      >
+                        <ChevronLeftIcon className="h-5 w-5" />
+                      </button>
+                      <div className="flex items-center gap-2 flex-wrap min-w-0">
+                        {messageMode === "invoice" ? (
+                          <>
+                            <FileCheckIcon className="h-4 w-4 text-sky-500 shrink-0" />
+                            <span className="text-sm font-semibold">
+                              Invoice Email
+                            </span>
+                          </>
+                        ) : messageMode === "reminder" ? (
+                          <>
+                            <AlertCircleIcon className="h-4 w-4 text-amber-500 shrink-0" />
+                            <span className="text-sm font-semibold">
+                              Payment Reminder
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <MailIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+                            <span className="text-sm font-semibold">
+                              General Email
+                            </span>
+                          </>
+                        )}
+                        {selectedInvoiceId !== null &&
+                          (() => {
+                            const inv = data.invoices.find(
+                              (i) => i.invoice_id === selectedInvoiceId,
+                            );
+                            return inv ? (
+                              <span className="text-xs bg-muted px-2 py-0.5 rounded-full text-muted-foreground shrink-0">
+                                Re: Invoice #{inv.invoice_number}
+                              </span>
+                            ) : null;
+                          })()}
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-5 pt-5">
+                    <div className="space-y-2">
+                      <Label>To</Label>
+                      <Input
+                        value={messageDraft.to_email}
+                        onChange={(e) =>
+                          setMessageDraft((current) => ({
+                            ...current,
+                            to_email: e.target.value,
+                          }))
+                        }
+                        placeholder="client@example.com"
+                      />
+                      {rememberedRecipients.length > 0 && (
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          {rememberedRecipients.map((em) => (
+                            <Badge
+                              key={em}
+                              variant="outline"
+                              className="cursor-pointer font-normal text-xs hover:bg-muted"
+                              onClick={() =>
+                                setMessageDraft((current) => ({
+                                  ...current,
+                                  to_email: em,
+                                }))
+                              }
+                            >
+                              {em}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Subject</Label>
+                      <Input
+                        value={messageDraft.subject}
+                        onChange={(e) =>
+                          setMessageDraft((current) => ({
+                            ...current,
+                            subject: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Message Body</Label>
+                      <Textarea
+                        rows={10}
+                        value={messageDraft.body}
+                        onChange={(e) =>
+                          setMessageDraft((current) => ({
+                            ...current,
+                            body: e.target.value,
+                          }))
+                        }
+                        className="font-mono text-sm leading-relaxed"
+                      />
+                    </div>
+                  </CardContent>
+                  <CardFooter className="justify-end gap-3 border-t bg-muted/10 py-4">
+                    <Button
+                      variant="secondary"
+                      onClick={() => void handleMessageSend(true)}
+                    >
+                      <PlayIcon className="mr-2 h-4 w-4" /> Dry Run
+                    </Button>
+                    <Button onClick={() => void handleMessageSend(false)}>
+                      <SendIcon className="mr-2 h-4 w-4" /> Send Now
+                    </Button>
+                  </CardFooter>
+                </>
+              )}
+
+              {/* ── STEP: sent ── */}
+              {commStep === "sent" &&
+                mailResult &&
+                mailResult.ok &&
+                !mailResult.dry_run && (
+                <>
+                  <CardHeader className="border-b bg-emerald-50 pb-4 pt-5">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100">
+                        <CheckCircle2Icon className="h-5 w-5 text-emerald-600" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-base text-emerald-800">
+                          Email Sent
+                        </CardTitle>
+                        <CardDescription className="text-emerald-600 text-xs">
+                          Successfully delivered
+                        </CardDescription>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-5 pb-2 space-y-3">
+                    <div className="rounded-xl border bg-muted/20 p-4 space-y-2.5 text-sm">
+                      <div className="flex gap-3">
+                        <span className="text-muted-foreground w-16 shrink-0">
+                          Type
+                        </span>
+                        <span className="font-medium capitalize">
+                          {messageMode ?? ""}
+                        </span>
+                      </div>
+                      <div className="flex gap-3">
+                        <span className="text-muted-foreground w-16 shrink-0">
+                          To
+                        </span>
+                        <span className="font-medium">
+                          {mailResult.to_email}
+                        </span>
+                      </div>
+                      <div className="flex gap-3">
+                        <span className="text-muted-foreground w-16 shrink-0">
+                          Subject
+                        </span>
+                        <span className="font-medium">
+                          {mailResult.subject}
+                        </span>
+                      </div>
+                      {selectedInvoiceId !== null &&
+                        (() => {
+                          const inv = data.invoices.find(
+                            (i) => i.invoice_id === selectedInvoiceId,
+                          );
+                          return inv ? (
+                            <div className="flex gap-3">
+                              <span className="text-muted-foreground w-16 shrink-0">
+                                Invoice
+                              </span>
+                              <span className="font-medium">
+                                #{inv.invoice_number}
+                              </span>
+                            </div>
+                          ) : null;
+                        })()}
+                      <div className="flex gap-3">
+                        <span className="text-muted-foreground w-16 shrink-0">
+                          Sent at
+                        </span>
+                        <span className="font-medium">
+                          {formatDateTime(
+                            (mailResult as unknown as { sent_at?: string | null }).sent_at,
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  </CardContent>
+                  <CardFooter className="gap-3 border-t bg-muted/10 py-4 mt-4">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => {
+                        setCommStep("pick-type");
+                        setMessageMode(null);
+                        setSelectedInvoiceId(null);
+                        setMailResult(null);
+                        setMessageDraft(buildBlankMessageDraft(data, null));
+                      }}
+                    >
+                      <PlusIcon className="mr-2 h-4 w-4" /> New Email
+                    </Button>
+                    <Button
+                      className="flex-1"
+                      onClick={() => {
+                        if (selectedInvoiceId !== null) {
+                          setCommStep("compose");
+                        } else {
+                          setCommStep("pick-type");
+                          setMessageMode(null);
+                        }
+                        setMailResult(null);
+                      }}
+                    >
+                      <RefreshCwIcon className="mr-2 h-4 w-4" /> Send
+                      Another
+                    </Button>
+                  </CardFooter>
+                </>
+              )}
+            </Card>
+
+            {/* RIGHT: Email history — inline accordion */}
+            <div className="space-y-4">
+              <h4 className="text-sm font-semibold tracking-tight text-muted-foreground uppercase">
+                Email History ({data.email_log.length})
+              </h4>
+              <div className="space-y-2">
+                {[...data.email_log].reverse().map((log) => {
+                  const isExpanded = expandedLogId === log.log_id;
+                  const emailType = String(log.email_type ?? "")
+                    .trim()
+                    .toLowerCase();
+                  return (
+                    <div key={log.log_id}>
+                      <button
+                        className={`w-full text-left rounded-lg border p-3 transition-all hover:border-primary/40 hover:shadow-sm ${
+                          isExpanded
+                            ? "rounded-b-none border-b-0 bg-primary/5 border-primary/30"
+                            : "bg-card"
+                        }`}
+                        onClick={() =>
+                          setExpandedLogId(isExpanded ? null : log.log_id)
+                        }
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {emailType === "reminder" ? (
+                              <AlertCircleIcon className="h-4 w-4 shrink-0 text-amber-500" />
+                            ) : emailType === "invoice" ? (
+                              <FileCheckIcon className="h-4 w-4 shrink-0 text-sky-500" />
+                            ) : (
+                              <MailIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                            )}
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">
+                                {log.subject}
+                              </p>
+                              <p className="text-xs text-muted-foreground truncate">
+                                To: {log.to_email}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                              {formatDateTime(log.sent_at)}
+                            </span>
+                            {isExpanded ? (
+                              <ChevronDownIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                            ) : (
+                              <ChevronRightIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                            )}
+                          </div>
+                        </div>
+                        <div className="mt-1.5">
+                          <Badge
+                            variant={emailType === "reminder" ? "secondary" : "outline"}
+                            className="text-[10px] font-bold uppercase"
+                          >
+                            {emailType || "invoice"}
+                          </Badge>
+                        </div>
+                      </button>
+                      {isExpanded && (
+                        <div className="rounded-b-lg border border-t-0 border-primary/30 bg-primary/5 px-4 pt-3 pb-4">
+                          <div className="space-y-1 text-xs text-muted-foreground mb-3 pb-3 border-b border-primary/10">
+                            <div>
+                              <span className="font-medium text-foreground">
+                                To:
+                              </span>{" "}
+                              {log.to_email}
+                            </div>
+                            <div>
+                              <span className="font-medium text-foreground">
+                                Sent:
+                              </span>{" "}
+                              {formatDateTime(log.sent_at)}
+                            </div>
+                          </div>
+                          <pre className="whitespace-pre-wrap font-sans text-sm text-muted-foreground leading-relaxed">
+                            {log.body_preview || "(No body recorded)"}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {data.email_log.length === 0 && (
+                  <div className="rounded-lg border border-dashed p-6 text-center">
+                    <p className="text-sm text-muted-foreground">
+                      No emails sent yet.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="grid gap-5 px-6 pb-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(380px,0.8fr)]">
           <SectionCard
             title="Compose Email"
             description="Email output is driven by the currently selected invoice and stored templates."
@@ -4621,12 +6389,40 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                 options={[
                   { value: "invoice", label: "Invoice" },
                   { value: "reminder", label: "Reminder" },
+                  { value: "general", label: "General" },
                 ]}
               />
             }
           >
             {selectedInvoice ? (
               <div className="space-y-4">
+                {commStep === "sent" && mailResult && mailResult.ok && !mailResult.dry_run ? (
+                  <div className="rounded-[18px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+                    <p className="font-semibold">Email sent.</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => {
+                          setCommStep("pick-type");
+                          setMessageMode(null);
+                          setMailResult(null);
+                        }}
+                      >
+                        Send another
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setCommStep("compose")}
+                      >
+                        Back to compose
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+
                 <div className="rounded-[20px] border border-[#dbe4ef] bg-[#f7faff] px-4 py-4">
                   <div className="flex flex-wrap items-center gap-2 text-xs">
                     <span className="rounded-full bg-white px-2.5 py-1 font-semibold text-slate-700 shadow-sm">
@@ -4709,7 +6505,8 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                 {messageMode == null ? (
                   <div className="rounded-[18px] border border-[#dbe4ef] bg-[#f8fbff] px-4 py-3 text-sm text-slate-700">
                     Choose <span className="font-semibold">Invoice</span> or{" "}
-                    <span className="font-semibold">Reminder</span> to load the
+                    <span className="font-semibold">Reminder</span> or{" "}
+                    <span className="font-semibold">General</span> to load the
                     default subject and message text.
                   </div>
                 ) : null}
@@ -4734,7 +6531,9 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                       ? "Send Email"
                       : messageMode === "invoice"
                         ? "Send Invoice"
-                        : "Send Reminder"}
+                        : messageMode === "reminder"
+                          ? "Send Reminder"
+                          : "Send General"}
                   </Button>
                   <Button
                     type="button"
@@ -4764,8 +6563,20 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                     <p className="text-base font-semibold">
                       {mailResult.ok
                         ? mailResult.dry_run
-                          ? `${messageMode === "invoice" ? "Invoice" : "Reminder"} draft ready`
-                          : `${messageMode === "invoice" ? "Invoice" : "Reminder"} email sent`
+                          ? `${
+                              messageMode === "invoice"
+                                ? "Invoice"
+                                : messageMode === "reminder"
+                                  ? "Reminder"
+                                  : "General"
+                            } draft ready`
+                          : `${
+                              messageMode === "invoice"
+                                ? "Invoice"
+                                : messageMode === "reminder"
+                                  ? "Reminder"
+                                  : "General"
+                            } email sent`
                         : "Email action failed"}
                     </p>
                     <p className="mt-1 text-sm opacity-90">
@@ -5183,9 +6994,332 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
             </SectionCard>
           </div>
         </div>
-      ) : null}
+      ) ) : null}
       {activeTab === "profile" ? (
-        <div className="flex flex-col gap-5 px-6 pb-5">
+        VERBATIM_REPLIT_UI_PORT ? (
+          <div className="flex flex-col gap-5 px-6 pb-5">
+            {/* Verbatim Replit UI port: Contract Profile */}
+            <div className="space-y-6">
+              <div className="grid gap-6 lg:grid-cols-2">
+                {/* LEFT: Contract Details (first / most important) */}
+                <Card>
+                  <CardHeader className="border-b">
+                    <CardTitle className="text-base">Contract Details</CardTitle>
+                    <CardDescription>
+                      Financial and operational parameters for this case.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="grid gap-4 pt-5 sm:grid-cols-2">
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <Label>Contract Sum</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          type="number"
+                          value={profileDraft.contract_sum}
+                          onChange={(e) =>
+                            setProfileDraft((current) => ({
+                              ...current,
+                              contract_sum: e.target.value,
+                            }))
+                          }
+                          className="flex-1"
+                        />
+                        <Select
+                          value={profileDraft.currency || "MKD"}
+                          onValueChange={(value) =>
+                            setProfileDraft((current) => ({
+                              ...current,
+                              currency: value,
+                            }))
+                          }
+                        >
+                          <SelectTrigger className="w-24">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {currencyOptions.map((currency) => (
+                              <SelectItem
+                                key={currency}
+                                value={currency}
+                              >
+                                {currency}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <Label>Case / Service Type</Label>
+                      <Input
+                        value={profileDraft.service_type}
+                        onChange={(e) =>
+                          setProfileDraft((current) => ({
+                            ...current,
+                            service_type: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <Label>Notes</Label>
+                      <Textarea
+                        value={profileDraft.notes}
+                        onChange={(e) =>
+                          setProfileDraft((current) => ({
+                            ...current,
+                            notes: e.target.value,
+                          }))
+                        }
+                        className="resize-none"
+                        rows={4}
+                      />
+                    </div>
+                  </CardContent>
+                  <CardFooter className="justify-end gap-2 border-t py-4">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        if (!data) return;
+                        setProfileDraft(buildProfileDraft(data));
+                        setContactDraft(buildContactDraft(data));
+                      }}
+                    >
+                      Reset
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        void saveProfile();
+                        toast({
+                          title: "Saved",
+                          description: "Contract details updated.",
+                        });
+                      }}
+                    >
+                      Save Changes
+                    </Button>
+                  </CardFooter>
+                </Card>
+
+                {/* RIGHT: Client Information */}
+                <Card>
+                  <CardHeader className="border-b">
+                    <CardTitle className="text-base">Client Information</CardTitle>
+                    <CardDescription>
+                      Details used for invoice generation and communication.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="grid gap-4 pt-5 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <Label>Name / Last name</Label>
+                      <Input
+                        value={profileDraft.client_name}
+                        onChange={(e) =>
+                          setProfileDraft((current) => ({
+                            ...current,
+                            client_name: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Company</Label>
+                      <Input
+                        value={companyValue}
+                        onChange={(e) =>
+                          setContactDraft((current) => ({
+                            ...current,
+                            customFields: {
+                              ...current.customFields,
+                              company: e.target.value,
+                            },
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Phone</Label>
+                      <Input
+                        value={profileDraft.client_phone}
+                        onChange={(e) =>
+                          setProfileDraft((current) => ({
+                            ...current,
+                            client_phone: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Primary Email</Label>
+                      <Input
+                        type="email"
+                        value={primaryEmail}
+                        onChange={(e) =>
+                          setContactDraft((current) => ({
+                            ...current,
+                            customFields: {
+                              ...current.customFields,
+                              email: e.target.value,
+                            },
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <Label>Alternative Emails</Label>
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        {splitMultiValueText(alternateEmailsValue).map(
+                          (em) => (
+                            <Badge
+                              key={em}
+                              variant="outline"
+                              className="font-normal text-sm px-3 py-1 gap-2"
+                            >
+                              {em}
+                              <button
+                                type="button"
+                                className="text-muted-foreground hover:text-destructive"
+                                onClick={() => {
+                                  const next = splitMultiValueText(
+                                    alternateEmailsValue,
+                                  ).filter((x) => x !== em);
+                                  setContactDraft((current) => ({
+                                    ...current,
+                                    customFields: {
+                                      ...current.customFields,
+                                      alternate_emails: next.join(", "),
+                                    },
+                                  }));
+                                }}
+                              >
+                                <XIcon className="h-3 w-3" />
+                              </button>
+                            </Badge>
+                          ),
+                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => {
+                            const next = window.prompt(
+                              "Add email (comma separated allowed):",
+                            );
+                            if (!next) return;
+                            const current = splitMultiValueText(
+                              alternateEmailsValue,
+                            );
+                            const merged = mergeUniqueValues([
+                              ...current,
+                              ...splitMultiValueText(next),
+                            ]);
+                            setContactDraft((currentDraft) => ({
+                              ...currentDraft,
+                              customFields: {
+                                ...currentDraft.customFields,
+                                alternate_emails: merged.join(", "),
+                              },
+                            }));
+                          }}
+                        >
+                          <PlusIcon className="mr-1 h-3 w-3" /> Add Email
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <Label>Address</Label>
+                      <Input
+                        value={addressValue}
+                        onChange={(e) =>
+                          setContactDraft((current) => ({
+                            ...current,
+                            customFields: {
+                              ...current.customFields,
+                              address: e.target.value,
+                            },
+                          }))
+                        }
+                      />
+                    </div>
+                  </CardContent>
+                  <CardFooter className="justify-end gap-2 border-t py-4">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        if (!data) return;
+                        setProfileDraft(buildProfileDraft(data));
+                        setContactDraft(buildContactDraft(data));
+                      }}
+                    >
+                      Reset
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        void saveProfile();
+                        toast({
+                          title: "Saved",
+                          description: "Client information updated.",
+                        });
+                      }}
+                    >
+                      Save Changes
+                    </Button>
+                  </CardFooter>
+                </Card>
+              </div>
+
+              {/* Case Summary — full width below */}
+              <Card>
+                <CardHeader className="border-b">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Building2Icon className="h-4 w-4 text-muted-foreground" />{" "}
+                    Case Summary
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-5">
+                  <div className="grid grid-cols-2 gap-y-4 gap-x-8 text-sm sm:grid-cols-4">
+                    {[
+                      { label: "Case ID", value: data.case_id },
+                      {
+                        label: "Request Type",
+                        value: data.request_type,
+                      },
+                      { label: "Status", value: data.status },
+                      { label: "Currency", value: data.currency },
+                      {
+                        label: "Invoices",
+                        value: `${data.invoices.length} issued`,
+                      },
+                      {
+                        label: "Payments",
+                        value: `${data.payments.length} logged`,
+                      },
+                      {
+                        label: "Emails Sent",
+                        value: `${data.email_log.length} total`,
+                      },
+                      {
+                        label: "Outstanding",
+                        value: formatMoney(
+                          data.remaining,
+                          data.currency,
+                        ),
+                      },
+                    ].map(({ label, value }) => (
+                      <div key={label}>
+                        <p className="text-muted-foreground mb-0.5 text-xs">
+                          {label}
+                        </p>
+                        <p className="font-medium">{value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-5 px-6 pb-5">
           {profileSaveStatus !== "idle" ? (
             <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
               {profileSaveStatus === "saving" ? (
@@ -5518,7 +7652,7 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
           </SectionCard>
           </div>
         </div>
-      ) : null}
+      ) ) : null}
     </PageContainer>
   );
 }

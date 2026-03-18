@@ -631,16 +631,20 @@ def send_invoice_email(conn: sqlite3.Connection, invoice_id: int, payload: dict[
         result["message"] = error
         return result
 
-    conn.execute(
-        "UPDATE finance_invoices SET status = ?, updated_at = ? WHERE invoice_id = ?",
-        ("SENT", datetime.now().isoformat(timespec="seconds"), int(invoice_id)),
-    )
-    conn.commit()
+    requested_type = str(payload.get("email_type") or "invoice").strip().lower()
+    email_type = requested_type if requested_type in ("invoice", "general") else "invoice"
+
+    if email_type == "invoice":
+        conn.execute(
+            "UPDATE finance_invoices SET status = ?, updated_at = ? WHERE invoice_id = ?",
+            ("SENT", datetime.now().isoformat(timespec="seconds"), int(invoice_id)),
+        )
+        conn.commit()
     log_sent_email(
         conn,
         str(invoice.get("case_id") or "").strip(),
         to_email,
-        "invoice",
+        email_type,
         subject=subject,
         body_preview=str(body),
         attachment_filename=attachment_filename,
