@@ -5,7 +5,7 @@ import { StatusBadge } from "@/components/finance/StatusBadge";
 import {
   AlertTriangle, RefreshCw, CheckCircle2, ArrowRight, Wallet,
   FileText, Mail, Clock, Trash2, Plus, Send, Copy, AlertCircle,
-  CreditCard, Play, FileCheck, Save, ChevronDown, ChevronRight, X, Building2, PencilLine
+  CreditCard, Play, FileCheck, Save, ChevronDown, ChevronRight, ChevronLeft, X, Building2, PencilLine
 } from "lucide-react";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -68,7 +68,14 @@ function formatDateTime(dateStr: string) {
   return new Date(dateStr).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-type EmailLog = (typeof MOCK_DATA.email_log)[number];
+type EmailLog = {
+  log_id: number;
+  email_type: "invoice" | "reminder" | "general";
+  to_email: string;
+  subject: string;
+  sent_at: string;
+  body_preview: string;
+};
 
 export default function FinanceWorkspace() {
   const { toast } = useToast();
@@ -78,8 +85,14 @@ export default function FinanceWorkspace() {
   // Right panel mode
   const [panelView, setPanelView] = useState<"invoice" | "payment" | "email">("invoice");
   const [activeInvoiceId, setActiveInvoiceId] = useState<number | null>(null);
-  const [selectedEmailLog, setSelectedEmailLog] = useState<EmailLog | null>(null);
   const [panelEmail, setPanelEmail] = useState<EmailLog | null>(null);
+
+  // Communication tab flow state
+  const [commStep, setCommStep] = useState<"pick-type" | "pick-invoice" | "compose" | "sent">("pick-type");
+  const [commType, setCommType] = useState<"invoice" | "reminder" | "general" | null>(null);
+  const [commSelectedInvoiceId, setCommSelectedInvoiceId] = useState<number | null>(null);
+  const [lastSentEmail, setLastSentEmail] = useState<EmailLog | null>(null);
+  const [expandedLogId, setExpandedLogId] = useState<number | null>(null);
 
   const paidTotal = data.payments.reduce((acc, p) => acc + p.amount, 0);
   const invoicedTotal = data.invoices.reduce((acc, i) => acc + i.amount, 0);
@@ -138,12 +151,7 @@ export default function FinanceWorkspace() {
     service_description: data.request_type, line_items: "",
     reminders_enabled: 1, reminder_first_after_days: 3, reminder_repeat_days: 7, reminder_max_count: 3,
   });
-  const [commForm, setCommForm] = useState({
-    mode: "invoice" as "invoice" | "reminder",
-    to: primaryEmail,
-    subject: `Invoice for case ${data.case_id}`,
-    body: `Dear ${data.client_name},\n\nPlease find the details for case ${data.case_id}.\n\nBest regards,\neurbanizam team`,
-  });
+  const [commForm, setCommForm] = useState({ to: primaryEmail, subject: "", body: "" });
 
   // Handlers
   const handleLogPayment = () => {
@@ -184,8 +192,10 @@ export default function FinanceWorkspace() {
   const handleSendEmail = (isDryRun: boolean = false) => {
     if (!commForm.to) { toast({ title: "Error", description: "Recipient email is required", variant: "destructive" }); return; }
     if (isDryRun) { toast({ title: "Dry run successful", description: "Email looks good and is ready to send." }); return; }
-    const newLog = { log_id: Date.now(), email_type: commForm.mode, to_email: commForm.to, subject: commForm.subject, sent_at: new Date().toISOString(), body_preview: commForm.body };
+    const newLog: EmailLog = { log_id: Date.now(), email_type: commType ?? "general", to_email: commForm.to, subject: commForm.subject, sent_at: new Date().toISOString(), body_preview: commForm.body };
     setData(prev => ({ ...prev, email_log: [...prev.email_log, newLog] }));
+    setLastSentEmail(newLog);
+    setCommStep("sent");
     toast({ title: "Email sent", description: `Successfully sent to ${commForm.to}` });
   };
 
@@ -193,6 +203,16 @@ export default function FinanceWorkspace() {
     setPanelView("invoice");
     setActiveInvoiceId(inv.invoice_id);
     setInvoiceForm({ invoice_number: inv.invoice_number, status: inv.status, issue_date: inv.issue_date, due_date: inv.due_date, amount: inv.amount.toString(), currency: inv.currency, client_name: inv.client_name, client_email: inv.client_email, client_address: inv.client_address, service_description: inv.service_description, line_items: "", reminders_enabled: inv.reminders_enabled, reminder_first_after_days: inv.reminder_first_after_days, reminder_repeat_days: inv.reminder_repeat_days, reminder_max_count: inv.reminder_max_count });
+  };
+
+  const prefillCommForm = (type: "invoice" | "reminder" | "general", invoiceId: number | null) => {
+    const inv = invoiceId !== null ? data.invoices.find(i => i.invoice_id === invoiceId) : null;
+    if (type === "invoice" && inv) {
+      return { to: inv.client_email || primaryEmail, subject: `Invoice ${inv.invoice_number} for case ${data.case_id}`, body: `Dear ${data.client_name},\n\nPlease find attached Invoice ${inv.invoice_number} for case ${data.case_id}.\nAmount: ${formatMoney(inv.amount, inv.currency)}\nDue: ${formatDate(inv.due_date)}\n\nThank you for your business.\n\nBest regards,\neurbanizam team` };
+    } else if (type === "reminder" && inv) {
+      return { to: inv.client_email || primaryEmail, subject: `Payment reminder for invoice ${inv.invoice_number}`, body: `Dear ${data.client_name},\n\nThis is a friendly reminder that Invoice ${inv.invoice_number} (${formatMoney(inv.amount, inv.currency)}) is due on ${formatDate(inv.due_date)}.\n\nPlease arrange payment at your earliest convenience.\n\nBest regards,\neurbanizam team` };
+    }
+    return { to: primaryEmail, subject: "", body: `Dear ${data.client_name},\n\n\n\nBest regards,\neurbanizam team` };
   };
 
   return (
@@ -455,7 +475,16 @@ export default function FinanceWorkspace() {
                         <Button size="sm" variant="outline" className="flex-1 text-xs" onClick={() => { setPanelView("invoice"); setActiveInvoiceId(null); setPanelEmail(null); }}>
                           <Plus className="mr-1.5 h-3.5 w-3.5" /> New Invoice
                         </Button>
-                        <Button size="sm" className="flex-1 text-xs" onClick={() => { setActiveTab("communication"); setCommForm(f => ({ ...f, mode: panelEmail.email_type === "reminder" ? "reminder" : "invoice", to: panelEmail.to_email, subject: panelEmail.subject })); setPanelEmail(null); }}>
+                        <Button size="sm" className="flex-1 text-xs" onClick={() => {
+                          const type = panelEmail.email_type === "reminder" ? "reminder" as const : "invoice" as const;
+                          setCommType(type);
+                          setCommSelectedInvoiceId(null);
+                          setCommForm({ to: panelEmail.to_email, subject: `Re: ${panelEmail.subject}`, body: "" });
+                          setLastSentEmail(null);
+                          setCommStep("compose");
+                          setActiveTab("communication");
+                          setPanelEmail(null);
+                        }}>
                           <Send className="mr-1.5 h-3.5 w-3.5" /> Reply / Follow up
                         </Button>
                       </CardFooter>
@@ -610,10 +639,24 @@ export default function FinanceWorkspace() {
                           </Button>
                         </div>
                         <div className="flex w-full gap-2">
-                          <Button variant="outline" className="flex-1" onClick={() => { setActiveTab("communication"); setCommForm({ ...commForm, mode: "invoice" }); }}>
+                          <Button variant="outline" className="flex-1" onClick={() => {
+                            const invId = activeInvoiceId;
+                            setCommType("invoice");
+                            setCommSelectedInvoiceId(invId);
+                            setLastSentEmail(null);
+                            if (invId !== null) { setCommForm(prefillCommForm("invoice", invId)); setCommStep("compose"); } else { setCommStep("pick-invoice"); }
+                            setActiveTab("communication");
+                          }}>
                             <Send className="mr-1.5 h-3.5 w-3.5" /> Send Invoice
                           </Button>
-                          <Button variant="outline" className="flex-1" onClick={() => { setActiveTab("communication"); setCommForm({ ...commForm, mode: "reminder" }); }}>
+                          <Button variant="outline" className="flex-1" onClick={() => {
+                            const invId = activeInvoiceId;
+                            setCommType("reminder");
+                            setCommSelectedInvoiceId(invId);
+                            setLastSentEmail(null);
+                            if (invId !== null) { setCommForm(prefillCommForm("reminder", invId)); setCommStep("compose"); } else { setCommStep("pick-invoice"); }
+                            setActiveTab("communication");
+                          }}>
                             <Clock className="mr-1.5 h-3.5 w-3.5" /> Send Reminder
                           </Button>
                         </div>
@@ -669,114 +712,234 @@ export default function FinanceWorkspace() {
           <TabsContent value="communication" className="outline-none">
             <div className="grid gap-6 lg:grid-cols-[1fr_400px]">
 
-              {/* LEFT: Compose */}
-              <Card>
-                <CardHeader className="border-b bg-muted/20 pb-4">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <Mail className="h-4 w-4 text-primary" /> Compose Email
-                    </CardTitle>
-                    <div className="flex items-center gap-1 rounded-full border bg-background p-0.5 shadow-sm">
-                      <Button variant={commForm.mode === "invoice" ? "default" : "ghost"} size="sm" className="h-7 rounded-full text-xs px-3" onClick={() => setCommForm({ ...commForm, mode: "invoice" })}>
-                        Invoice
-                      </Button>
-                      <Button variant={commForm.mode === "reminder" ? "default" : "ghost"} size="sm" className="h-7 rounded-full text-xs px-3" onClick={() => setCommForm({ ...commForm, mode: "reminder" })}>
-                        Reminder
-                      </Button>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-5 pt-6">
-                  <div className="space-y-2">
-                    <Label>To</Label>
-                    <Input value={commForm.to} onChange={e => setCommForm({ ...commForm, to: e.target.value })} placeholder="client@example.com" />
-                    {data.remembered_recipients.length > 0 && (
-                      <div className="flex flex-wrap gap-2 pt-1">
-                        {data.remembered_recipients.map(em => (
-                          <Badge key={em} variant="outline" className="cursor-pointer font-normal text-xs hover:bg-muted" onClick={() => setCommForm({ ...commForm, to: em })}>
-                            {em}
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Subject</Label>
-                    <Input value={commForm.subject} onChange={e => setCommForm({ ...commForm, subject: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Message Body</Label>
-                    <Textarea rows={10} value={commForm.body} onChange={e => setCommForm({ ...commForm, body: e.target.value })} className="font-mono text-sm leading-relaxed" />
-                  </div>
-                </CardContent>
-                <CardFooter className="justify-end gap-3 border-t bg-muted/10 py-4">
-                  <Button variant="secondary" onClick={() => handleSendEmail(true)}>
-                    <Play className="mr-2 h-4 w-4" /> Dry Run
-                  </Button>
-                  <Button onClick={() => handleSendEmail(false)}>
-                    <Send className="mr-2 h-4 w-4" /> Send Now
-                  </Button>
-                </CardFooter>
-              </Card>
+              {/* LEFT: Compose flow — 4 steps: pick-type / pick-invoice / compose / sent */}
+              <Card className="overflow-hidden">
 
-              {/* RIGHT: Email history with expandable detail */}
-              <div className="space-y-4">
-                <h4 className="text-sm font-semibold tracking-tight text-muted-foreground uppercase">Email History ({data.email_log.length})</h4>
-
-                {selectedEmailLog && (
-                  <Card className="border-primary/30 bg-primary/5">
-                    <CardHeader className="pb-3 pt-4 px-4 border-b">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <div className="flex items-center gap-2 mb-1">
-                            {selectedEmailLog.email_type === "reminder" ? <AlertCircle className="h-4 w-4 text-amber-500" /> : <FileCheck className="h-4 w-4 text-blue-500" />}
-                            <span className="text-xs font-bold uppercase text-muted-foreground">{selectedEmailLog.email_type}</span>
-                          </div>
-                          <p className="text-sm font-semibold">{selectedEmailLog.subject}</p>
-                        </div>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground" onClick={() => setSelectedEmailLog(null)}>
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      <div className="mt-2 space-y-1 text-xs text-muted-foreground">
-                        <div><span className="font-medium text-foreground">To:</span> {selectedEmailLog.to_email}</div>
-                        <div><span className="font-medium text-foreground">Sent:</span> {formatDateTime(selectedEmailLog.sent_at)}</div>
-                      </div>
+                {/* ── STEP: pick-type ── */}
+                {commStep === "pick-type" && (
+                  <>
+                    <CardHeader className="border-b bg-muted/20 pb-4">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Mail className="h-4 w-4 text-primary" /> New Email
+                      </CardTitle>
+                      <CardDescription>Choose what you would like to send</CardDescription>
                     </CardHeader>
-                    <CardContent className="px-4 pt-4 pb-4">
-                      <pre className="whitespace-pre-wrap font-sans text-sm text-muted-foreground leading-relaxed">{selectedEmailLog.body_preview || "(No body recorded)"}</pre>
+                    <CardContent className="pt-8 pb-10">
+                      <div className="grid grid-cols-3 gap-4">
+                        <button
+                          className="rounded-xl border-2 border-dashed p-5 text-left transition-all hover:border-sky-400 hover:bg-sky-50 group"
+                          onClick={() => { setCommType("invoice"); setCommStep("pick-invoice"); }}
+                        >
+                          <FileCheck className="h-6 w-6 text-sky-500 mb-3" />
+                          <p className="text-sm font-semibold">Invoice Email</p>
+                          <p className="text-xs text-muted-foreground mt-1 leading-relaxed">Send an invoice to the client</p>
+                        </button>
+                        <button
+                          className="rounded-xl border-2 border-dashed p-5 text-left transition-all hover:border-amber-400 hover:bg-amber-50 group"
+                          onClick={() => { setCommType("reminder"); setCommStep("pick-invoice"); }}
+                        >
+                          <AlertCircle className="h-6 w-6 text-amber-500 mb-3" />
+                          <p className="text-sm font-semibold">Payment Reminder</p>
+                          <p className="text-xs text-muted-foreground mt-1 leading-relaxed">Remind client about an outstanding invoice</p>
+                        </button>
+                        <button
+                          className="rounded-xl border-2 border-dashed p-5 text-left transition-all hover:border-primary hover:bg-primary/5 group"
+                          onClick={() => { setCommType("general"); setCommSelectedInvoiceId(null); setCommForm(prefillCommForm("general", null)); setCommStep("compose"); }}
+                        >
+                          <Mail className="h-6 w-6 text-muted-foreground mb-3" />
+                          <p className="text-sm font-semibold">General Email</p>
+                          <p className="text-xs text-muted-foreground mt-1 leading-relaxed">Any other message to the client</p>
+                        </button>
+                      </div>
                     </CardContent>
-                  </Card>
+                  </>
                 )}
 
-                <div className="space-y-2">
-                  {[...data.email_log].reverse().map(log => (
-                    <button
-                      key={log.log_id}
-                      className={`w-full text-left rounded-lg border p-3 transition-all hover:border-primary/40 hover:shadow-sm ${selectedEmailLog?.log_id === log.log_id ? "ring-2 ring-primary border-transparent bg-primary/5" : "bg-card"}`}
-                      onClick={() => setSelectedEmailLog(selectedEmailLog?.log_id === log.log_id ? null : log)}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          {log.email_type === "reminder" ? <AlertCircle className="h-4 w-4 shrink-0 text-amber-500" /> : <FileCheck className="h-4 w-4 shrink-0 text-blue-500" />}
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium truncate">{log.subject}</p>
-                            <p className="text-xs text-muted-foreground truncate">To: {log.to_email}</p>
+                {/* ── STEP: pick-invoice ── */}
+                {commStep === "pick-invoice" && (
+                  <>
+                    <CardHeader className="border-b bg-muted/20 pb-4">
+                      <div className="flex items-center gap-3">
+                        <button className="text-muted-foreground hover:text-foreground transition-colors" onClick={() => { setCommStep("pick-type"); setCommType(null); }}>
+                          <ChevronLeft className="h-5 w-5" />
+                        </button>
+                        <div>
+                          <CardTitle className="text-base flex items-center gap-2">
+                            {commType === "reminder"
+                              ? <><AlertCircle className="h-4 w-4 text-amber-500" /> Payment Reminder</>
+                              : <><FileCheck className="h-4 w-4 text-sky-500" /> Invoice Email</>}
+                          </CardTitle>
+                          <CardDescription>Select the invoice this email is about</CardDescription>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="pt-5 pb-6 space-y-3">
+                      {data.invoices.length === 0 && <p className="text-sm text-muted-foreground text-center py-10">No invoices found.</p>}
+                      {data.invoices.map(inv => {
+                        const isOverdue = inv.status !== "PAID" && inv.status !== "CANCELLED" && new Date(inv.due_date) < TODAY_MOCK;
+                        return (
+                          <button
+                            key={inv.invoice_id}
+                            className="w-full text-left rounded-xl border-2 border-transparent bg-muted/30 p-4 transition-all hover:border-primary hover:bg-primary/5"
+                            onClick={() => { setCommSelectedInvoiceId(inv.invoice_id); setCommForm(prefillCommForm(commType!, inv.invoice_id)); setCommStep("compose"); }}
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-sm font-semibold">Invoice #{inv.invoice_number}</span>
+                                  <StatusBadge status={inv.status} />
+                                  {isOverdue && <span className="text-[10px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded">Overdue</span>}
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-0.5 truncate">{inv.service_description}</p>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <p className="text-sm font-semibold">{formatMoney(inv.amount, inv.currency)}</p>
+                                <p className="text-[10px] text-muted-foreground">Due: {formatDate(inv.due_date)}</p>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </CardContent>
+                  </>
+                )}
+
+                {/* ── STEP: compose ── */}
+                {commStep === "compose" && (
+                  <>
+                    <CardHeader className="border-b bg-muted/20 pb-3 pt-4">
+                      <div className="flex items-center gap-3">
+                        <button
+                          className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                          onClick={() => { if (commType === "general") { setCommStep("pick-type"); setCommType(null); } else { setCommStep("pick-invoice"); setCommSelectedInvoiceId(null); } }}
+                        >
+                          <ChevronLeft className="h-5 w-5" />
+                        </button>
+                        <div className="flex items-center gap-2 flex-wrap min-w-0">
+                          {commType === "invoice" && <><FileCheck className="h-4 w-4 text-sky-500 shrink-0" /><span className="text-sm font-semibold">Invoice Email</span></>}
+                          {commType === "reminder" && <><AlertCircle className="h-4 w-4 text-amber-500 shrink-0" /><span className="text-sm font-semibold">Payment Reminder</span></>}
+                          {commType === "general" && <><Mail className="h-4 w-4 text-muted-foreground shrink-0" /><span className="text-sm font-semibold">General Email</span></>}
+                          {commSelectedInvoiceId !== null && (() => {
+                            const inv = data.invoices.find(i => i.invoice_id === commSelectedInvoiceId);
+                            return inv ? <span className="text-xs bg-muted px-2 py-0.5 rounded-full text-muted-foreground shrink-0">Re: Invoice #{inv.invoice_number}</span> : null;
+                          })()}
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-5 pt-5">
+                      <div className="space-y-2">
+                        <Label>To</Label>
+                        <Input value={commForm.to} onChange={e => setCommForm({ ...commForm, to: e.target.value })} placeholder="client@example.com" />
+                        {data.remembered_recipients.length > 0 && (
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            {data.remembered_recipients.map(em => (
+                              <Badge key={em} variant="outline" className="cursor-pointer font-normal text-xs hover:bg-muted" onClick={() => setCommForm({ ...commForm, to: em })}>{em}</Badge>
+                            ))}
                           </div>
+                        )}
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Subject</Label>
+                        <Input value={commForm.subject} onChange={e => setCommForm({ ...commForm, subject: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Message Body</Label>
+                        <Textarea rows={10} value={commForm.body} onChange={e => setCommForm({ ...commForm, body: e.target.value })} className="font-mono text-sm leading-relaxed" />
+                      </div>
+                    </CardContent>
+                    <CardFooter className="justify-end gap-3 border-t bg-muted/10 py-4">
+                      <Button variant="secondary" onClick={() => handleSendEmail(true)}>
+                        <Play className="mr-2 h-4 w-4" /> Dry Run
+                      </Button>
+                      <Button onClick={() => handleSendEmail(false)}>
+                        <Send className="mr-2 h-4 w-4" /> Send Now
+                      </Button>
+                    </CardFooter>
+                  </>
+                )}
+
+                {/* ── STEP: sent ── */}
+                {commStep === "sent" && lastSentEmail && (
+                  <>
+                    <CardHeader className="border-b bg-emerald-50 pb-4 pt-5">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100">
+                          <CheckCircle2 className="h-5 w-5 text-emerald-600" />
                         </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <span className="text-[10px] text-muted-foreground whitespace-nowrap">{formatDateTime(log.sent_at)}</span>
-                          {selectedEmailLog?.log_id === log.log_id ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                        <div>
+                          <CardTitle className="text-base text-emerald-800">Email Sent</CardTitle>
+                          <CardDescription className="text-emerald-600 text-xs">Successfully delivered</CardDescription>
                         </div>
                       </div>
-                      <div className="mt-1.5 flex items-center gap-2">
-                        <Badge variant={log.email_type === "reminder" ? "secondary" : "outline"} className="text-[10px] font-bold uppercase">
-                          {log.email_type}
-                        </Badge>
-                        <span className="text-xs text-muted-foreground">Click to view full message</span>
+                    </CardHeader>
+                    <CardContent className="pt-5 pb-2 space-y-3">
+                      <div className="rounded-xl border bg-muted/20 p-4 space-y-2.5 text-sm">
+                        <div className="flex gap-3"><span className="text-muted-foreground w-16 shrink-0">Type</span><span className="font-medium capitalize">{lastSentEmail.email_type}</span></div>
+                        <div className="flex gap-3"><span className="text-muted-foreground w-16 shrink-0">To</span><span className="font-medium">{lastSentEmail.to_email}</span></div>
+                        <div className="flex gap-3"><span className="text-muted-foreground w-16 shrink-0">Subject</span><span className="font-medium">{lastSentEmail.subject}</span></div>
+                        {commSelectedInvoiceId !== null && (() => {
+                          const inv = data.invoices.find(i => i.invoice_id === commSelectedInvoiceId);
+                          return inv ? <div className="flex gap-3"><span className="text-muted-foreground w-16 shrink-0">Invoice</span><span className="font-medium">#{inv.invoice_number}</span></div> : null;
+                        })()}
+                        <div className="flex gap-3"><span className="text-muted-foreground w-16 shrink-0">Sent at</span><span className="font-medium">{formatDateTime(lastSentEmail.sent_at)}</span></div>
                       </div>
-                    </button>
-                  ))}
+                    </CardContent>
+                    <CardFooter className="gap-3 border-t bg-muted/10 py-4 mt-4">
+                      <Button variant="outline" className="flex-1" onClick={() => { setCommStep("pick-type"); setCommType(null); setCommSelectedInvoiceId(null); setLastSentEmail(null); }}>
+                        <Plus className="mr-2 h-4 w-4" /> New Email
+                      </Button>
+                      <Button className="flex-1" onClick={() => {
+                        if (commSelectedInvoiceId !== null) { setCommStep("compose"); } else { setCommStep("pick-type"); setCommType(null); }
+                        setLastSentEmail(null);
+                      }}>
+                        <RefreshCw className="mr-2 h-4 w-4" /> Send Another
+                      </Button>
+                    </CardFooter>
+                  </>
+                )}
+              </Card>
+
+              {/* RIGHT: Email history — inline accordion */}
+              <div className="space-y-4">
+                <h4 className="text-sm font-semibold tracking-tight text-muted-foreground uppercase">Email History ({data.email_log.length})</h4>
+                <div className="space-y-2">
+                  {[...data.email_log].reverse().map(log => {
+                    const isExpanded = expandedLogId === log.log_id;
+                    return (
+                      <div key={log.log_id}>
+                        <button
+                          className={`w-full text-left rounded-lg border p-3 transition-all hover:border-primary/40 hover:shadow-sm ${isExpanded ? "rounded-b-none border-b-0 bg-primary/5 border-primary/30" : "bg-card"}`}
+                          onClick={() => setExpandedLogId(isExpanded ? null : log.log_id)}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              {log.email_type === "reminder" ? <AlertCircle className="h-4 w-4 shrink-0 text-amber-500" /> : log.email_type === "invoice" ? <FileCheck className="h-4 w-4 shrink-0 text-sky-500" /> : <Mail className="h-4 w-4 shrink-0 text-muted-foreground" />}
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium truncate">{log.subject}</p>
+                                <p className="text-xs text-muted-foreground truncate">To: {log.to_email}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className="text-[10px] text-muted-foreground whitespace-nowrap">{formatDateTime(log.sent_at)}</span>
+                              {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                            </div>
+                          </div>
+                          <div className="mt-1.5">
+                            <Badge variant={log.email_type === "reminder" ? "secondary" : "outline"} className="text-[10px] font-bold uppercase">{log.email_type}</Badge>
+                          </div>
+                        </button>
+                        {isExpanded && (
+                          <div className="rounded-b-lg border border-t-0 border-primary/30 bg-primary/5 px-4 pt-3 pb-4">
+                            <div className="space-y-1 text-xs text-muted-foreground mb-3 pb-3 border-b border-primary/10">
+                              <div><span className="font-medium text-foreground">To:</span> {log.to_email}</div>
+                              <div><span className="font-medium text-foreground">Sent:</span> {formatDateTime(log.sent_at)}</div>
+                            </div>
+                            <pre className="whitespace-pre-wrap font-sans text-sm text-muted-foreground leading-relaxed">{log.body_preview || "(No body recorded)"}</pre>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                   {data.email_log.length === 0 && (
                     <div className="rounded-lg border border-dashed p-6 text-center">
                       <p className="text-sm text-muted-foreground">No emails sent yet.</p>
