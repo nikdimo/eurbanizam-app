@@ -1,0 +1,29 @@
+Checking how the finance workspace renders: the Replit prototype layout may not be wired into the code path that actually runs in the browser.
+
+Confirming: the screenshots show two different layouts. Production still uses the Invoice board + bottom activity + right editor (second image). The first image matches the Replit prototype (unified timeline + right draft panel). We only added Communication/General and backend logging — we didn't replace the workbench layout. Porting the prototype's workbench UI into the live component.
+
+Removing the top Invoice board table and grouping the activity timeline by date so the workbench matches the Replit layout: timeline left, draft (or email preview) right.
+
+Implementing the Replit-style workbench: removing the invoice table, grouping the timeline by date, and adding a right-panel email preview.
+
+finance-case-workspace.tsx
++1
+  paymentId?: number;  badges?: TimelineBadge[];
+  paymentId?: number;  emailLogId?: number;  badges?: TimelineBadge[];
+finance-case-workspace.tsx
+      kind: "email",      timestamp: email.sent_at ?? email.created_at,      dateLabel: "Sent",      title: isReminder ? "Reminder sent" : isGeneral ? "General email sent" : "Invoice email sent",      description: displayText(email.subject)        ? `${displayText(email.to_email)}
+Am I going to use the code from replit or you are making a look alike?
+
+Here’s the honest split:
+
+You’re not dropping the Replit file in as-is
+_prototype/FinanceCaseWorkspace.tsx is built for mock data, different paths (@/hooks/use-toast, extra components, etc.), and a Vite-style app. Pasting it over apps/web/.../finance-case-workspace.tsx would break production: no real caseId loading, no apiClient/refreshCase, no invoice PATCH/POST, etc.
+
+What we’re doing instead: port (same UX, real wiring)
+Same ideas as Replit: timeline-first workbench, communication flow, general email type, panel behavior, etc.
+Implemented inside your existing Next.js component so all real endpoints and state stay the source of truth.
+That’s not a lazy “look‑alike from memory”—it’s Replit’s layout + flows, reimplemented against your real APIs. You can still copy chunks of JSX from Replit and then swap props/handlers/imports line by line; that’s still “using Replit,” just adapted, not raw.
+If you want “maximum Replit fidelity”
+We’d lift larger sections from _prototype/FinanceCaseWorkspace.tsx (structure/classNames) and only replace mock setData with your existing handlers—same visual result, more literal reuse of their markup.
+
+Short answer: You’re using Replit as the design spec + optional JSX donor; production code is your Next.js file, extended until it matches Replit—not a separate duplicate app.
