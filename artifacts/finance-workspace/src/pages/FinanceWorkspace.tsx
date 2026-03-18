@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { StatPill } from "@/components/finance/StatPill";
-import { StatusBadge, StatusVariant } from "@/components/finance/StatusBadge";
+import { StatusBadge } from "@/components/finance/StatusBadge";
 import {
   AlertTriangle, RefreshCw, CheckCircle2, ArrowRight, Wallet,
   FileText, Mail, Clock, Trash2, Plus, Send, Copy, AlertCircle,
@@ -22,31 +22,31 @@ const MOCK_DATA = {
   case_id: "76989",
   title: "Marija Dimovska - Urbanistički Projekt",
   request_type: "Urbanistički Projekt",
-  finance_status: "YELLOW",
   status: "IN_PROGRESS",
   contract_sum: 100000,
   currency: "MKD",
-  finance_date: "2026-02-01",
-  due_date: "2026-04-30",
   client_name: "Marija Dimovska",
-  client_company: "Dimovska Consulting d.o.o.",
   client_phone: "+38970123456",
-  client_address: "Partizanska 15, 1000 Skopje",
-  case_email: "dimovski.niko@gmail.com",
-  alt_emails: ["dimovski.niko@outlook.com"],
   notes: "Client prefers email contact. Partial payment already received.",
+  custom_fields: {
+    "Name / Last name": "Marija Dimovska",
+    email: "dimovski.niko@gmail.com",
+    alternate_emails: "dimovski.niko@outlook.com",
+    company: "Dimovska Consulting d.o.o.",
+    address: "Partizanska 15, 1000 Skopje",
+  } as Record<string, string>,
   payments: [
-    { id: 1, date: "2026-03-11", amount: 20000, currency: "MKD", note: "down payment" },
-    { id: 2, date: "2026-03-12", amount: 40000, currency: "MKD", note: "second installment" },
+    { payment_id: 1, payment_date: "2026-03-11", amount: 20000, currency: "MKD", note: "down payment" },
+    { payment_id: 2, payment_date: "2026-03-12", amount: 40000, currency: "MKD", note: "second installment" },
   ],
   invoices: [
-    { id: 1, number: "001", status: "PAID", issue_date: "2026-02-15", due_date: "2026-03-01", amount: 60000, currency: "MKD", client_name: "Marija Dimovska", client_email: "dimovski.niko@gmail.com", service_description: "Urbanistički Projekt - faza 1", reminders_enabled: true, reminder_first_after_days: 3, reminder_repeat_days: 7, reminder_max_count: 3, reminder_sent_count: 0 },
-    { id: 2, number: "002", status: "SENT", issue_date: "2026-03-10", due_date: "2026-03-20", amount: 40000, currency: "MKD", client_name: "Marija Dimovska", client_email: "dimovski.niko@outlook.com", service_description: "Urbanistički Projekt - faza 2", reminders_enabled: true, reminder_first_after_days: 3, reminder_repeat_days: 7, reminder_max_count: 3, reminder_sent_count: 2 },
+    { invoice_id: 1, invoice_number: "001", status: "PAID", issue_date: "2026-02-15", due_date: "2026-03-01", amount: 60000, currency: "MKD", client_name: "Marija Dimovska", client_email: "dimovski.niko@gmail.com", client_address: "Partizanska 15, 1000 Skopje", service_description: "Urbanistički Projekt - faza 1", reminders_enabled: 1, reminder_first_after_days: 3, reminder_repeat_days: 7, reminder_max_count: 3, reminder_sent_count: 0 },
+    { invoice_id: 2, invoice_number: "002", status: "SENT", issue_date: "2026-03-10", due_date: "2026-03-20", amount: 40000, currency: "MKD", client_name: "Marija Dimovska", client_email: "dimovski.niko@outlook.com", client_address: "Partizanska 15, 1000 Skopje", service_description: "Urbanistički Projekt - faza 2", reminders_enabled: 1, reminder_first_after_days: 3, reminder_repeat_days: 7, reminder_max_count: 3, reminder_sent_count: 2 },
   ],
   email_log: [
-    { id: 1, type: "invoice", to: "dimovski.niko@gmail.com", subject: "Invoice 001 for case 76989", sent_at: "2026-02-15T11:00:00", body: "Dear Marija,\n\nPlease find attached Invoice 001 for case 76989.\nAmount: 60,000.00 MKD\nDue: 01 Mar 2026\n\nThank you for your business.\n\nBest regards,\neurbanizam team" },
-    { id: 2, type: "invoice", to: "dimovski.niko@outlook.com", subject: "Invoice 002 for case 76989", sent_at: "2026-03-12T23:29:00", body: "Dear Marija,\n\nPlease find attached Invoice 002 for case 76989.\nAmount: 40,000.00 MKD\nDue: 20 Mar 2026\n\nThank you for your business.\n\nBest regards,\neurbanizam team" },
-    { id: 3, type: "reminder", to: "dimovski.niko@outlook.com", subject: "Payment reminder for invoice 002", sent_at: "2026-03-12T23:31:00", body: "Dear Marija,\n\nThis is a friendly reminder that Invoice 002 (40,000.00 MKD) is due on 20 Mar 2026.\n\nPlease arrange payment at your earliest convenience.\n\nBest regards,\neurbanizam team" },
+    { log_id: 1, email_type: "invoice", to_email: "dimovski.niko@gmail.com", subject: "Invoice 001 for case 76989", sent_at: "2026-02-15T11:00:00", body_preview: "Dear Marija,\n\nPlease find attached Invoice 001 for case 76989.\nAmount: 60,000.00 MKD\nDue: 01 Mar 2026\n\nThank you for your business.\n\nBest regards,\neurbanizam team" },
+    { log_id: 2, email_type: "invoice", to_email: "dimovski.niko@outlook.com", subject: "Invoice 002 for case 76989", sent_at: "2026-03-12T23:29:00", body_preview: "Dear Marija,\n\nPlease find attached Invoice 002 for case 76989.\nAmount: 40,000.00 MKD\nDue: 20 Mar 2026\n\nThank you for your business.\n\nBest regards,\neurbanizam team" },
+    { log_id: 3, email_type: "reminder", to_email: "dimovski.niko@outlook.com", subject: "Payment reminder for invoice 002", sent_at: "2026-03-12T23:31:00", body_preview: "Dear Marija,\n\nThis is a friendly reminder that Invoice 002 (40,000.00 MKD) is due on 20 Mar 2026.\n\nPlease arrange payment at your earliest convenience.\n\nBest regards,\neurbanizam team" },
   ],
   remembered_recipients: ["dimovski.niko@outlook.com", "dimovski.niko@gmail.com"],
   settings: { smtp_from_email: null as string | null, company_email: null as string | null },
@@ -68,7 +68,7 @@ function formatDateTime(dateStr: string) {
   return new Date(dateStr).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-type EmailLog = typeof MOCK_DATA.email_log[number];
+type EmailLog = (typeof MOCK_DATA.email_log)[number];
 
 export default function FinanceWorkspace() {
   const { toast } = useToast();
@@ -104,9 +104,9 @@ export default function FinanceWorkspace() {
   // Unified timeline for Invoices tab
   const unifiedTimeline = useMemo(() => {
     const items: Array<{ type: string; date: string; sortKey: string; id: string; payload: unknown }> = [];
-    data.invoices.forEach(inv => items.push({ type: "invoice", date: inv.issue_date, sortKey: inv.issue_date, id: `inv-${inv.id}`, payload: inv }));
-    data.payments.forEach(p => items.push({ type: "payment", date: p.date, sortKey: p.date, id: `pay-${p.id}`, payload: p }));
-    data.email_log.forEach(log => items.push({ type: "email", date: log.sent_at, sortKey: log.sent_at, id: `email-${log.id}`, payload: log }));
+    data.invoices.forEach(inv => items.push({ type: "invoice", date: inv.issue_date, sortKey: inv.issue_date, id: `inv-${inv.invoice_id}`, payload: inv }));
+    data.payments.forEach(p => items.push({ type: "payment", date: p.payment_date, sortKey: p.payment_date, id: `pay-${p.payment_id}`, payload: p }));
+    data.email_log.forEach(log => items.push({ type: "email", date: log.sent_at, sortKey: log.sent_at, id: `email-${log.log_id}`, payload: log }));
     return items.sort((a, b) => new Date(b.sortKey).getTime() - new Date(a.sortKey).getTime());
   }, [data]);
 
@@ -126,55 +126,58 @@ export default function FinanceWorkspace() {
   }, [unifiedTimeline]);
 
   // Forms
-  const [paymentForm, setPaymentForm] = useState({ date: TODAY_MOCK.toISOString().split("T")[0], amount: outstanding > 0 ? outstanding.toString() : "", currency: data.currency, note: "" });
+  const primaryEmail = data.custom_fields["email"] ?? "";
+  const clientAddress = data.custom_fields["address"] ?? "";
+
+  const [paymentForm, setPaymentForm] = useState({ payment_date: TODAY_MOCK.toISOString().split("T")[0], amount: outstanding > 0 ? outstanding.toString() : "", currency: data.currency, note: "" });
   const [invoiceForm, setInvoiceForm] = useState({
-    number: "", status: "DRAFT", issue_date: TODAY_MOCK.toISOString().split("T")[0], due_date: "",
+    invoice_number: "", status: "DRAFT", issue_date: TODAY_MOCK.toISOString().split("T")[0], due_date: "",
     amount: outstanding > 0 ? outstanding.toString() : "", currency: data.currency,
-    client_name: data.client_name, client_email: data.case_email || "", client_address: data.client_address || "",
+    client_name: data.client_name, client_email: primaryEmail, client_address: clientAddress,
     service_description: data.request_type, line_items: "",
-    reminders_enabled: true, reminder_first_after_days: 3, reminder_repeat_days: 7, reminder_max_count: 3,
+    reminders_enabled: 1, reminder_first_after_days: 3, reminder_repeat_days: 7, reminder_max_count: 3,
   });
   const [commForm, setCommForm] = useState({
     mode: "invoice" as "invoice" | "reminder",
-    to: data.case_email || "",
+    to: primaryEmail,
     subject: `Invoice for case ${data.case_id}`,
     body: `Dear ${data.client_name},\n\nPlease find the details for case ${data.case_id}.\n\nBest regards,\neurbanizam team`,
   });
 
   // Handlers
   const handleLogPayment = () => {
-    if (!paymentForm.amount || !paymentForm.date) { toast({ title: "Error", description: "Date and amount are required", variant: "destructive" }); return; }
-    const newPayment = { id: Date.now(), date: paymentForm.date, amount: parseFloat(paymentForm.amount), currency: paymentForm.currency, note: paymentForm.note };
+    if (!paymentForm.amount || !paymentForm.payment_date) { toast({ title: "Error", description: "Date and amount are required", variant: "destructive" }); return; }
+    const newPayment = { payment_id: Date.now(), payment_date: paymentForm.payment_date, amount: parseFloat(paymentForm.amount), currency: paymentForm.currency, note: paymentForm.note };
     setData(prev => ({ ...prev, payments: [...prev.payments, newPayment] }));
     toast({ title: "Payment recorded" });
     setPaymentForm(prev => ({ ...prev, amount: "", note: "" }));
   };
 
-  const handleDeletePayment = (id: number) => {
-    setData(prev => ({ ...prev, payments: prev.payments.filter(p => p.id !== id) }));
+  const handleDeletePayment = (payment_id: number) => {
+    setData(prev => ({ ...prev, payments: prev.payments.filter(p => p.payment_id !== payment_id) }));
     toast({ title: "Payment deleted" });
   };
 
   const handleSaveInvoice = () => {
-    if (!invoiceForm.number || !invoiceForm.amount) { toast({ title: "Error", description: "Invoice number and amount are required", variant: "destructive" }); return; }
-    const newInvoice = { id: Date.now(), number: invoiceForm.number, status: invoiceForm.status, issue_date: invoiceForm.issue_date, due_date: invoiceForm.due_date, amount: parseFloat(invoiceForm.amount), currency: invoiceForm.currency, client_name: invoiceForm.client_name, client_email: invoiceForm.client_email, service_description: invoiceForm.service_description, reminders_enabled: invoiceForm.reminders_enabled, reminder_first_after_days: invoiceForm.reminder_first_after_days, reminder_repeat_days: invoiceForm.reminder_repeat_days, reminder_max_count: invoiceForm.reminder_max_count, reminder_sent_count: 0 };
+    if (!invoiceForm.invoice_number || !invoiceForm.amount) { toast({ title: "Error", description: "Invoice number and amount are required", variant: "destructive" }); return; }
+    const newInvoice = { invoice_id: Date.now(), invoice_number: invoiceForm.invoice_number, status: invoiceForm.status, issue_date: invoiceForm.issue_date, due_date: invoiceForm.due_date, amount: parseFloat(invoiceForm.amount), currency: invoiceForm.currency, client_name: invoiceForm.client_name, client_email: invoiceForm.client_email, client_address: invoiceForm.client_address, service_description: invoiceForm.service_description, reminders_enabled: invoiceForm.reminders_enabled, reminder_first_after_days: invoiceForm.reminder_first_after_days, reminder_repeat_days: invoiceForm.reminder_repeat_days, reminder_max_count: invoiceForm.reminder_max_count, reminder_sent_count: 0 };
     setData(prev => ({ ...prev, invoices: [...prev.invoices, newInvoice] }));
-    toast({ title: "Invoice saved", description: `Invoice ${invoiceForm.number} created.` });
-    setActiveInvoiceId(newInvoice.id);
+    toast({ title: "Invoice saved", description: `Invoice ${invoiceForm.invoice_number} created.` });
+    setActiveInvoiceId(newInvoice.invoice_id);
   };
 
   const handleSendEmail = (isDryRun: boolean = false) => {
     if (!commForm.to) { toast({ title: "Error", description: "Recipient email is required", variant: "destructive" }); return; }
     if (isDryRun) { toast({ title: "Dry run successful", description: "Email looks good and is ready to send." }); return; }
-    const newLog = { id: Date.now(), type: commForm.mode, to: commForm.to, subject: commForm.subject, sent_at: new Date().toISOString(), body: commForm.body };
+    const newLog = { log_id: Date.now(), email_type: commForm.mode, to_email: commForm.to, subject: commForm.subject, sent_at: new Date().toISOString(), body_preview: commForm.body };
     setData(prev => ({ ...prev, email_log: [...prev.email_log, newLog] }));
     toast({ title: "Email sent", description: `Successfully sent to ${commForm.to}` });
   };
 
-  const loadInvoiceIntoForm = (inv: typeof MOCK_DATA.invoices[number]) => {
+  const loadInvoiceIntoForm = (inv: (typeof MOCK_DATA.invoices)[number]) => {
     setDraftType("invoice");
-    setActiveInvoiceId(inv.id);
-    setInvoiceForm({ number: inv.number, status: inv.status, issue_date: inv.issue_date, due_date: inv.due_date, amount: inv.amount.toString(), currency: inv.currency, client_name: inv.client_name, client_email: inv.client_email, client_address: data.client_address || "", service_description: inv.service_description, line_items: "", reminders_enabled: inv.reminders_enabled, reminder_first_after_days: inv.reminder_first_after_days, reminder_repeat_days: inv.reminder_repeat_days, reminder_max_count: inv.reminder_max_count });
+    setActiveInvoiceId(inv.invoice_id);
+    setInvoiceForm({ invoice_number: inv.invoice_number, status: inv.status, issue_date: inv.issue_date, due_date: inv.due_date, amount: inv.amount.toString(), currency: inv.currency, client_name: inv.client_name, client_email: inv.client_email, client_address: inv.client_address, service_description: inv.service_description, line_items: "", reminders_enabled: inv.reminders_enabled, reminder_first_after_days: inv.reminder_first_after_days, reminder_repeat_days: inv.reminder_repeat_days, reminder_max_count: inv.reminder_max_count });
   };
 
   return (
@@ -188,7 +191,6 @@ export default function FinanceWorkspace() {
               <h1 className="text-base font-semibold tracking-tight truncate">{data.title}</h1>
               <Badge variant="outline" className="font-mono text-xs shrink-0">{data.case_id}</Badge>
               <Badge variant="secondary" className="text-xs shrink-0 hidden sm:inline-flex">{data.request_type}</Badge>
-              <StatusBadge status={data.finance_status as StatusVariant} className="shrink-0" />
             </div>
             <div className="flex items-center gap-4 ml-auto rounded-lg border bg-card px-4 py-1.5 shadow-xs">
               <StatPill label="Contract" value={formatMoney(data.contract_sum, data.currency)} />
@@ -253,7 +255,7 @@ export default function FinanceWorkspace() {
                     <Button size="sm" variant="outline" onClick={() => { setDraftType("payment"); setActiveInvoiceId(null); }}>
                       <CreditCard className="mr-1.5 h-3.5 w-3.5" /> New Payment
                     </Button>
-                    <Button size="sm" onClick={() => { setDraftType("invoice"); setActiveInvoiceId(null); setInvoiceForm(f => ({ ...f, number: `INV-${Date.now().toString().slice(-4)}` })); }}>
+                    <Button size="sm" onClick={() => { setDraftType("invoice"); setActiveInvoiceId(null); setInvoiceForm(f => ({ ...f, invoice_number: `INV-${Date.now().toString().slice(-4)}` })); }}>
                       <Plus className="mr-1.5 h-3.5 w-3.5" /> New Invoice
                     </Button>
                   </div>
@@ -287,9 +289,9 @@ export default function FinanceWorkspace() {
                         <div className="space-y-2 pl-6">
                           {groupItems.map((item) => {
                             if (item.type === "invoice") {
-                              const inv = item.payload as typeof MOCK_DATA.invoices[number];
+                              const inv = item.payload as (typeof MOCK_DATA.invoices)[number];
                               const isOverdue = inv.status !== "PAID" && inv.status !== "CANCELLED" && new Date(inv.due_date) < TODAY_MOCK;
-                              const isActive = activeInvoiceId === inv.id;
+                              const isActive = activeInvoiceId === inv.invoice_id;
                               const dotColor = inv.status === "PAID" ? "bg-emerald-500" : isOverdue ? "bg-red-500" : "bg-blue-500";
                               return (
                                 <div key={item.id} className="relative">
@@ -303,7 +305,7 @@ export default function FinanceWorkspace() {
                                         <div className="flex flex-wrap items-center gap-1.5 mb-1">
                                           <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Invoice</span>
                                           <span className="text-[10px] text-muted-foreground">·</span>
-                                          <code className="text-xs font-semibold text-foreground">#{inv.number}</code>
+                                          <code className="text-xs font-semibold text-foreground">#{inv.invoice_number}</code>
                                           <StatusBadge status={inv.status} />
                                           {isOverdue && (
                                             <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-700">
@@ -325,7 +327,7 @@ export default function FinanceWorkspace() {
                             }
 
                             if (item.type === "payment") {
-                              const p = item.payload as typeof MOCK_DATA.payments[number];
+                              const p = item.payload as (typeof MOCK_DATA.payments)[number];
                               return (
                                 <div key={item.id} className="relative">
                                   <div className="absolute -left-[28px] top-1/2 -translate-y-1/2 h-3 w-3 rounded-full border-2 border-background bg-emerald-500" />
@@ -343,7 +345,7 @@ export default function FinanceWorkspace() {
                                           variant="ghost"
                                           size="icon"
                                           className="h-7 w-7 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all"
-                                          onClick={() => handleDeletePayment(p.id)}
+                                          onClick={() => handleDeletePayment(p.payment_id)}
                                         >
                                           <Trash2 className="h-3.5 w-3.5" />
                                         </Button>
@@ -356,7 +358,7 @@ export default function FinanceWorkspace() {
 
                             if (item.type === "email") {
                               const log = item.payload as EmailLog;
-                              const isReminder = log.type === "reminder";
+                              const isReminder = log.email_type === "reminder";
                               return (
                                 <div key={item.id} className="relative">
                                   <div className={`absolute -left-[28px] top-1/2 -translate-y-1/2 h-3 w-3 rounded-full border-2 border-background ${isReminder ? "bg-amber-400" : "bg-sky-400"}`} />
@@ -369,7 +371,7 @@ export default function FinanceWorkspace() {
                                             {isReminder ? "Reminder Sent" : "Invoice Email Sent"}
                                           </span>
                                         </div>
-                                        <p className="text-xs text-muted-foreground truncate">To: {log.to}</p>
+                                        <p className="text-xs text-muted-foreground truncate">To: {log.to_email}</p>
                                         <p className="text-[10px] text-muted-foreground/70 mt-0.5 truncate">{log.subject}</p>
                                       </div>
                                       <span className="text-[10px] text-muted-foreground/60 shrink-0 whitespace-nowrap">
@@ -414,7 +416,7 @@ export default function FinanceWorkspace() {
                         <div className="grid grid-cols-2 gap-3">
                           <div className="space-y-1.5">
                             <Label>Invoice Number</Label>
-                            <Input value={invoiceForm.number} onChange={e => setInvoiceForm({ ...invoiceForm, number: e.target.value })} placeholder="001" />
+                            <Input value={invoiceForm.invoice_number} onChange={e => setInvoiceForm({ ...invoiceForm, invoice_number: e.target.value })} placeholder="001" />
                           </div>
                           <div className="space-y-1.5">
                             <Label>Status</Label>
@@ -528,7 +530,7 @@ export default function FinanceWorkspace() {
                       <CardContent className="space-y-4 pt-5 px-5 text-sm">
                         <div className="space-y-1.5">
                           <Label>Date</Label>
-                          <Input type="date" value={paymentForm.date} onChange={e => setPaymentForm({ ...paymentForm, date: e.target.value })} />
+                          <Input type="date" value={paymentForm.payment_date} onChange={e => setPaymentForm({ ...paymentForm, payment_date: e.target.value })} />
                         </div>
                         <div className="space-y-1.5">
                           <Label>Amount</Label>
@@ -631,8 +633,8 @@ export default function FinanceWorkspace() {
                       <div className="flex items-start justify-between gap-2">
                         <div>
                           <div className="flex items-center gap-2 mb-1">
-                            {selectedEmailLog.type === "reminder" ? <AlertCircle className="h-4 w-4 text-amber-500" /> : <FileCheck className="h-4 w-4 text-blue-500" />}
-                            <span className="text-xs font-bold uppercase text-muted-foreground">{selectedEmailLog.type}</span>
+                            {selectedEmailLog.email_type === "reminder" ? <AlertCircle className="h-4 w-4 text-amber-500" /> : <FileCheck className="h-4 w-4 text-blue-500" />}
+                            <span className="text-xs font-bold uppercase text-muted-foreground">{selectedEmailLog.email_type}</span>
                           </div>
                           <p className="text-sm font-semibold">{selectedEmailLog.subject}</p>
                         </div>
@@ -641,12 +643,12 @@ export default function FinanceWorkspace() {
                         </Button>
                       </div>
                       <div className="mt-2 space-y-1 text-xs text-muted-foreground">
-                        <div><span className="font-medium text-foreground">To:</span> {selectedEmailLog.to}</div>
+                        <div><span className="font-medium text-foreground">To:</span> {selectedEmailLog.to_email}</div>
                         <div><span className="font-medium text-foreground">Sent:</span> {formatDateTime(selectedEmailLog.sent_at)}</div>
                       </div>
                     </CardHeader>
                     <CardContent className="px-4 pt-4 pb-4">
-                      <pre className="whitespace-pre-wrap font-sans text-sm text-muted-foreground leading-relaxed">{selectedEmailLog.body || "(No body recorded)"}</pre>
+                      <pre className="whitespace-pre-wrap font-sans text-sm text-muted-foreground leading-relaxed">{selectedEmailLog.body_preview || "(No body recorded)"}</pre>
                     </CardContent>
                   </Card>
                 )}
@@ -654,26 +656,26 @@ export default function FinanceWorkspace() {
                 <div className="space-y-2">
                   {[...data.email_log].reverse().map(log => (
                     <button
-                      key={log.id}
-                      className={`w-full text-left rounded-lg border p-3 transition-all hover:border-primary/40 hover:shadow-sm ${selectedEmailLog?.id === log.id ? "ring-2 ring-primary border-transparent bg-primary/5" : "bg-card"}`}
-                      onClick={() => setSelectedEmailLog(selectedEmailLog?.id === log.id ? null : log)}
+                      key={log.log_id}
+                      className={`w-full text-left rounded-lg border p-3 transition-all hover:border-primary/40 hover:shadow-sm ${selectedEmailLog?.log_id === log.log_id ? "ring-2 ring-primary border-transparent bg-primary/5" : "bg-card"}`}
+                      onClick={() => setSelectedEmailLog(selectedEmailLog?.log_id === log.log_id ? null : log)}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-2 min-w-0">
-                          {log.type === "reminder" ? <AlertCircle className="h-4 w-4 shrink-0 text-amber-500" /> : <FileCheck className="h-4 w-4 shrink-0 text-blue-500" />}
+                          {log.email_type === "reminder" ? <AlertCircle className="h-4 w-4 shrink-0 text-amber-500" /> : <FileCheck className="h-4 w-4 shrink-0 text-blue-500" />}
                           <div className="min-w-0">
                             <p className="text-sm font-medium truncate">{log.subject}</p>
-                            <p className="text-xs text-muted-foreground truncate">To: {log.to}</p>
+                            <p className="text-xs text-muted-foreground truncate">To: {log.to_email}</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
                           <span className="text-[10px] text-muted-foreground whitespace-nowrap">{formatDateTime(log.sent_at)}</span>
-                          {selectedEmailLog?.id === log.id ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                          {selectedEmailLog?.log_id === log.log_id ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
                         </div>
                       </div>
                       <div className="mt-1.5 flex items-center gap-2">
-                        <Badge variant={log.type === "reminder" ? "secondary" : "outline"} className="text-[10px] font-bold uppercase">
-                          {log.type}
+                        <Badge variant={log.email_type === "reminder" ? "secondary" : "outline"} className="text-[10px] font-bold uppercase">
+                          {log.email_type}
                         </Badge>
                         <span className="text-xs text-muted-foreground">Click to view full message</span>
                       </div>
@@ -701,7 +703,7 @@ export default function FinanceWorkspace() {
                     <CardDescription>Financial and operational parameters for this case.</CardDescription>
                   </CardHeader>
                   <CardContent className="grid gap-4 pt-5 sm:grid-cols-2">
-                    <div className="space-y-1.5">
+                    <div className="space-y-1.5 sm:col-span-2">
                       <Label>Contract Sum</Label>
                       <div className="flex gap-2">
                         <Input type="number" defaultValue={data.contract_sum} className="flex-1" />
@@ -714,26 +716,6 @@ export default function FinanceWorkspace() {
                           </SelectContent>
                         </Select>
                       </div>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label>Finance Status</Label>
-                      <Select defaultValue={data.finance_status}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="GRAY">GRAY</SelectItem>
-                          <SelectItem value="YELLOW">YELLOW</SelectItem>
-                          <SelectItem value="GREEN">GREEN</SelectItem>
-                          <SelectItem value="RED">RED</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label>Finance Date</Label>
-                      <Input type="date" defaultValue={data.finance_date} />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label>Payment Due Date</Label>
-                      <Input type="date" defaultValue={data.due_date} />
                     </div>
                     <div className="space-y-1.5 sm:col-span-2">
                       <Label>Case / Service Type</Label>
@@ -758,12 +740,12 @@ export default function FinanceWorkspace() {
                   </CardHeader>
                   <CardContent className="grid gap-4 pt-5 sm:grid-cols-2">
                     <div className="space-y-1.5">
-                      <Label>Client Name</Label>
-                      <Input defaultValue={data.client_name} />
+                      <Label>Name / Last name</Label>
+                      <Input defaultValue={data.custom_fields["Name / Last name"] ?? data.client_name} />
                     </div>
                     <div className="space-y-1.5">
                       <Label>Company</Label>
-                      <Input defaultValue={data.client_company} />
+                      <Input defaultValue={data.custom_fields["company"] ?? ""} />
                     </div>
                     <div className="space-y-1.5">
                       <Label>Phone</Label>
@@ -771,12 +753,12 @@ export default function FinanceWorkspace() {
                     </div>
                     <div className="space-y-1.5">
                       <Label>Primary Email</Label>
-                      <Input type="email" defaultValue={data.case_email} />
+                      <Input type="email" defaultValue={data.custom_fields["email"] ?? ""} />
                     </div>
                     <div className="space-y-1.5 sm:col-span-2">
                       <Label>Alternative Emails</Label>
                       <div className="flex flex-wrap gap-2 pt-1">
-                        {data.alt_emails.map(em => (
+                        {(data.custom_fields["alternate_emails"] ?? "").split(/[,;\n]+/).map(s => s.trim()).filter(Boolean).map(em => (
                           <Badge key={em} variant="outline" className="font-normal text-sm px-3 py-1 gap-2">
                             {em}
                             <button className="text-muted-foreground hover:text-destructive"><X className="h-3 w-3" /></button>
@@ -789,7 +771,7 @@ export default function FinanceWorkspace() {
                     </div>
                     <div className="space-y-1.5 sm:col-span-2">
                       <Label>Address</Label>
-                      <Input defaultValue={data.client_address} />
+                      <Input defaultValue={data.custom_fields["address"] ?? ""} />
                     </div>
                   </CardContent>
                   <CardFooter className="justify-end gap-2 border-t py-4">
@@ -811,8 +793,8 @@ export default function FinanceWorkspace() {
                     {[
                       { label: "Case ID", value: data.case_id },
                       { label: "Request Type", value: data.request_type },
-                      { label: "Finance Date", value: formatDate(data.finance_date) },
-                      { label: "Due Date", value: formatDate(data.due_date) },
+                      { label: "Status", value: data.status },
+                      { label: "Currency", value: data.currency },
                       { label: "Invoices", value: `${data.invoices.length} issued` },
                       { label: "Payments", value: `${data.payments.length} logged` },
                       { label: "Emails Sent", value: `${data.email_log.length} total` },
