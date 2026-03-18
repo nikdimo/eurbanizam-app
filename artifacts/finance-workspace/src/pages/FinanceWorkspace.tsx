@@ -110,6 +110,21 @@ export default function FinanceWorkspace() {
     return items.sort((a, b) => new Date(b.sortKey).getTime() - new Date(a.sortKey).getTime());
   }, [data]);
 
+  // Group timeline by calendar date for visual separators
+  const groupedTimeline = useMemo(() => {
+    const groups: Array<{ dateLabel: string; items: typeof unifiedTimeline }> = [];
+    unifiedTimeline.forEach(item => {
+      const day = item.sortKey.split("T")[0];
+      const last = groups[groups.length - 1];
+      if (last && last.dateLabel === day) {
+        last.items.push(item);
+      } else {
+        groups.push({ dateLabel: day, items: [item] });
+      }
+    });
+    return groups;
+  }, [unifiedTimeline]);
+
   // Forms
   const [paymentForm, setPaymentForm] = useState({ date: TODAY_MOCK.toISOString().split("T")[0], amount: outstanding > 0 ? outstanding.toString() : "", currency: data.currency, note: "" });
   const [invoiceForm, setInvoiceForm] = useState({
@@ -244,99 +259,139 @@ export default function FinanceWorkspace() {
                   </div>
                 </div>
 
-                {unifiedTimeline.length === 0 ? (
-                  <div className="rounded-lg border border-dashed p-10 text-center">
-                    <p className="text-sm text-muted-foreground">No activity yet. Create an invoice or log a payment.</p>
+                {groupedTimeline.length === 0 ? (
+                  <div className="rounded-xl border border-dashed p-10 text-center">
+                    <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+                      <Clock className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                    <p className="text-sm font-medium text-muted-foreground">No activity yet</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Create an invoice or log a payment to get started.</p>
                   </div>
                 ) : (
-                  <div className="relative border-l-2 border-muted ml-4 space-y-1 pb-4">
-                    {unifiedTimeline.map((item) => {
-                      if (item.type === "invoice") {
-                        const inv = item.payload as typeof MOCK_DATA.invoices[number];
-                        const isOverdue = inv.status !== "PAID" && inv.status !== "CANCELLED" && new Date(inv.due_date) < TODAY_MOCK;
-                        const isActive = activeInvoiceId === inv.id;
-                        return (
-                          <div key={item.id} className="relative pl-8">
-                            <div className={`absolute -left-[13px] top-3 flex h-6 w-6 items-center justify-center rounded-full border-2 border-background ${inv.status === "PAID" ? "bg-emerald-100 text-emerald-600" : isOverdue ? "bg-red-100 text-red-600" : "bg-blue-100 text-blue-600"}`}>
-                              <FileText className="h-3 w-3" />
-                            </div>
-                            <button
-                              className={`w-full text-left rounded-lg border p-3 transition-all hover:border-primary/50 hover:shadow-sm ${isActive ? "ring-2 ring-primary border-transparent bg-primary/5" : "bg-card"}`}
-                              onClick={() => loadInvoiceIntoForm(inv)}
-                            >
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs text-muted-foreground">{formatDate(inv.issue_date)}</span>
-                                  <span className="text-xs font-bold uppercase text-muted-foreground">Invoice</span>
-                                  <Badge variant="outline" className="font-mono text-xs">#{inv.number}</Badge>
-                                  <StatusBadge status={inv.status} />
-                                  {isOverdue && <Badge variant="destructive" className="text-[10px]">OVERDUE</Badge>}
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <span className="font-bold text-sm">{formatMoney(inv.amount, inv.currency)}</span>
-                                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                                </div>
-                              </div>
-                              <p className="mt-1 text-xs text-muted-foreground">{inv.service_description} · Due {formatDate(inv.due_date)}</p>
-                            </button>
-                          </div>
-                        );
-                      }
+                  <div className="relative ml-5 pb-4">
+                    {/* Timeline vertical line */}
+                    <div className="absolute left-0 top-0 bottom-0 w-px bg-border" />
 
-                      if (item.type === "payment") {
-                        const p = item.payload as typeof MOCK_DATA.payments[number];
-                        return (
-                          <div key={item.id} className="relative pl-8">
-                            <div className="absolute -left-[13px] top-3 flex h-6 w-6 items-center justify-center rounded-full border-2 border-background bg-emerald-100 text-emerald-600">
-                              <CreditCard className="h-3 w-3" />
-                            </div>
-                            <div className="rounded-lg border bg-card p-3">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs text-muted-foreground">{formatDate(p.date)}</span>
-                                  <span className="text-xs font-bold uppercase text-emerald-700">Payment Received</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <span className="font-bold text-sm text-emerald-600">+{formatMoney(p.amount, p.currency)}</span>
-                                  <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={() => handleDeletePayment(p.id)}>
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </Button>
-                                </div>
-                              </div>
-                              {p.note && <p className="mt-1 text-xs text-muted-foreground">{p.note}</p>}
-                            </div>
-                          </div>
-                        );
-                      }
+                    {groupedTimeline.map(({ dateLabel, items: groupItems }) => (
+                      <div key={dateLabel} className="mb-2">
+                        {/* Date group separator */}
+                        <div className="relative mb-3 flex items-center gap-3 pl-6">
+                          <div className="absolute -left-[5px] h-2.5 w-2.5 rounded-full border-2 border-background bg-border" />
+                          <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                            {formatDate(dateLabel)}
+                          </span>
+                          <div className="flex-1 h-px bg-border/50" />
+                        </div>
 
-                      if (item.type === "email") {
-                        const log = item.payload as EmailLog;
-                        return (
-                          <div key={item.id} className="relative pl-8">
-                            <div className={`absolute -left-[13px] top-3 flex h-6 w-6 items-center justify-center rounded-full border-2 border-background ${log.type === "reminder" ? "bg-amber-100 text-amber-600" : "bg-sky-100 text-sky-600"}`}>
-                              <Mail className="h-3 w-3" />
-                            </div>
-                            <div className="rounded-lg border bg-card/60 p-3">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs text-muted-foreground">{formatDateTime(log.sent_at)}</span>
-                                  <span className={`text-xs font-bold uppercase ${log.type === "reminder" ? "text-amber-700" : "text-sky-700"}`}>{log.type === "reminder" ? "Reminder Sent" : "Invoice Email Sent"}</span>
+                        {/* Items within this date */}
+                        <div className="space-y-2 pl-6">
+                          {groupItems.map((item) => {
+                            if (item.type === "invoice") {
+                              const inv = item.payload as typeof MOCK_DATA.invoices[number];
+                              const isOverdue = inv.status !== "PAID" && inv.status !== "CANCELLED" && new Date(inv.due_date) < TODAY_MOCK;
+                              const isActive = activeInvoiceId === inv.id;
+                              const dotColor = inv.status === "PAID" ? "bg-emerald-500" : isOverdue ? "bg-red-500" : "bg-blue-500";
+                              return (
+                                <div key={item.id} className="relative">
+                                  <div className={`absolute -left-[28px] top-1/2 -translate-y-1/2 h-3 w-3 rounded-full border-2 border-background ${dotColor}`} />
+                                  <button
+                                    className={`group w-full text-left rounded-xl border bg-card p-4 shadow-xs transition-all hover:shadow-md hover:border-primary/40 ${isActive ? "ring-2 ring-primary/60 border-primary/30 bg-primary/[0.03]" : ""}`}
+                                    onClick={() => loadInvoiceIntoForm(inv)}
+                                  >
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                                          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Invoice</span>
+                                          <span className="text-[10px] text-muted-foreground">·</span>
+                                          <code className="text-xs font-semibold text-foreground">#{inv.number}</code>
+                                          <StatusBadge status={inv.status} />
+                                          {isOverdue && (
+                                            <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-700">
+                                              <AlertTriangle className="h-2.5 w-2.5" /> Overdue
+                                            </span>
+                                          )}
+                                        </div>
+                                        <p className="text-xs text-muted-foreground truncate">{inv.service_description}</p>
+                                        <p className="text-[10px] text-muted-foreground/70 mt-0.5">Due {formatDate(inv.due_date)}</p>
+                                      </div>
+                                      <div className="flex items-center gap-2 shrink-0">
+                                        <span className="text-sm font-bold tabular-nums">{formatMoney(inv.amount, inv.currency)}</span>
+                                        <ChevronRight className="h-4 w-4 text-muted-foreground/50 group-hover:text-primary transition-colors" />
+                                      </div>
+                                    </div>
+                                  </button>
                                 </div>
-                              </div>
-                              <p className="mt-1 text-xs text-muted-foreground">To: {log.to}</p>
-                            </div>
-                          </div>
-                        );
-                      }
-                      return null;
-                    })}
+                              );
+                            }
+
+                            if (item.type === "payment") {
+                              const p = item.payload as typeof MOCK_DATA.payments[number];
+                              return (
+                                <div key={item.id} className="relative">
+                                  <div className="absolute -left-[28px] top-1/2 -translate-y-1/2 h-3 w-3 rounded-full border-2 border-background bg-emerald-500" />
+                                  <div className="group rounded-xl border bg-card p-4 shadow-xs">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-1.5 mb-1">
+                                          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Payment Received</span>
+                                        </div>
+                                        {p.note && <p className="text-xs text-muted-foreground">{p.note}</p>}
+                                      </div>
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        <span className="text-sm font-bold tabular-nums text-emerald-600">+{formatMoney(p.amount, p.currency)}</span>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-7 w-7 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all"
+                                          onClick={() => handleDeletePayment(p.id)}
+                                        >
+                                          <Trash2 className="h-3.5 w-3.5" />
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            if (item.type === "email") {
+                              const log = item.payload as EmailLog;
+                              const isReminder = log.type === "reminder";
+                              return (
+                                <div key={item.id} className="relative">
+                                  <div className={`absolute -left-[28px] top-1/2 -translate-y-1/2 h-3 w-3 rounded-full border-2 border-background ${isReminder ? "bg-amber-400" : "bg-sky-400"}`} />
+                                  <div className="rounded-xl border bg-card p-4 shadow-xs">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-1.5 mb-1">
+                                          <Mail className={`h-3 w-3 shrink-0 ${isReminder ? "text-amber-500" : "text-sky-500"}`} />
+                                          <span className={`text-[10px] font-bold uppercase tracking-wider ${isReminder ? "text-amber-700" : "text-sky-700"}`}>
+                                            {isReminder ? "Reminder Sent" : "Invoice Email Sent"}
+                                          </span>
+                                        </div>
+                                        <p className="text-xs text-muted-foreground truncate">To: {log.to}</p>
+                                        <p className="text-[10px] text-muted-foreground/70 mt-0.5 truncate">{log.subject}</p>
+                                      </div>
+                                      <span className="text-[10px] text-muted-foreground/60 shrink-0 whitespace-nowrap">
+                                        {new Date(log.sent_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            }
+                            return null;
+                          })}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
 
               {/* RIGHT: Draft / Edit panel — Invoice or Payment toggle */}
               <div className="space-y-0">
-                <Card className="sticky top-[140px]">
+                <Card className="sticky top-[100px]">
                   <CardHeader className="border-b bg-muted/20 pb-3 pt-4 px-5">
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-sm font-semibold">
