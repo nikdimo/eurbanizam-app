@@ -3918,90 +3918,26 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
         onValueChange={handleTabsValueChange}
         className="w-full"
       >
-        <div className="sticky top-0 z-10 bg-background shadow-sm">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-6 py-3 border-b">
-            <div className="flex items-center gap-2 min-w-0">
-              <h1 className="text-base font-semibold tracking-tight truncate">
-                {data.title ?? "Finance case"}
-              </h1>
-              <Badge variant="outline" className="font-mono text-xs shrink-0">
-                {data.case_id}
-              </Badge>
-              <Badge
-                variant="secondary"
-                className="text-xs shrink-0 hidden sm:inline-flex"
-              >
-                {displayText(data.request_type)}
-              </Badge>
-            </div>
-
-            <div className="flex items-center gap-4 ml-auto rounded-lg border bg-card px-4 py-1.5 shadow-xs">
-              <StatPill
-                label="Contract"
-                value={formatMoney(data.contract_sum, data.currency)}
-              />
-              <Separator orientation="vertical" className="h-7" />
-              <StatPill
-                label="Invoiced"
-                value={formatMoney(data.invoiced_total, data.currency)}
-              />
-              <Separator orientation="vertical" className="h-7" />
-              <StatPill
-                label="Paid"
-                value={
-                  <span className="text-emerald-600">
-                    {formatMoney(data.paid_total, data.currency)}
-                  </span>
-                }
-              />
-              <Separator orientation="vertical" className="h-7" />
-              <StatPill
-                label="Outstanding"
-                value={
-                  <span
-                    className={
-                      data.remaining > 0
-                        ? "text-amber-600"
-                        : "text-emerald-600"
-                    }
-                  >
-                    {formatMoney(data.remaining, data.currency)}
-                  </span>
-                }
-              />
-              <Separator orientation="vertical" className="h-7" />
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 text-muted-foreground"
-                onClick={() => void refreshCase()}
-                disabled={busyAction != null}
-              >
-                <RefreshCwIcon className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          </div>
-
-          <TabsList className="flex w-full justify-start overflow-x-auto rounded-none border-b bg-transparent px-6 py-0">
-            {[
-              {
-                value: "invoices",
-                label: "Invoices & Payments",
-                icon: FileCheckIcon,
-              },
-              { value: "communication", label: "Communication", icon: MailIcon },
-              { value: "contract", label: "Contract Profile", icon: FileTextIcon },
-            ].map(({ value, label, icon: Icon }) => (
-              <TabsTrigger
-                key={value}
-                value={value}
-                className="relative h-10 rounded-none border-b-2 border-transparent px-4 pb-3 pt-2 font-medium text-muted-foreground data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:shadow-none"
-              >
-                <Icon className="mr-2 h-4 w-4" /> {label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </div>
+        {/* Only the tab strip; title + StatPills are already shown in your app shell. */}
+        <TabsList className="flex w-full justify-start overflow-x-auto rounded-none border-b bg-transparent px-6 py-0">
+          {[
+            {
+              value: "invoices",
+              label: "Invoices & Payments",
+              icon: FileCheckIcon,
+            },
+            { value: "communication", label: "Communication", icon: MailIcon },
+            { value: "contract", label: "Contract Profile", icon: FileTextIcon },
+          ].map(({ value, label, icon: Icon }) => (
+            <TabsTrigger
+              key={value}
+              value={value}
+              className="relative h-10 rounded-none border-b-2 border-transparent px-4 pb-3 pt-2 font-medium text-muted-foreground data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:shadow-none"
+            >
+              <Icon className="mr-2 h-4 w-4" /> {label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
 
         {recommendation ? (
           <div className="px-6 pt-4">
@@ -4535,21 +4471,40 @@ export function FinanceCaseWorkspace({ caseId }: { caseId: string }) {
                                     {invoiceDraft.service_description}
                                   </p>
                                 </div>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-7 shrink-0 gap-1 border-blue-200 bg-white text-xs text-blue-700 hover:bg-blue-50"
-                                  onClick={() => {
-                                    setEditingInvoiceId(null);
-                                    setInvoiceDraft((f) => ({
-                                      ...f,
-                                      invoice_number: "",
-                                      status: "DRAFT",
-                                    }));
-                                  }}
-                                >
-                                  <XIcon className="h-3 w-3" /> New
-                                </Button>
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    asChild
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 shrink-0 gap-1 border-blue-200 bg-white text-xs text-blue-700 hover:bg-blue-50"
+                                    title="View invoice (print from browser)"
+                                  >
+                                    <a
+                                      href={`${API_BASE.replace(/\/$/, "")}/api/finance/invoices/${editingInvoiceId}/html`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <FileTextIcon className="size-4 shrink-0" />
+                                      View
+                                    </a>
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 shrink-0 gap-1 border-blue-200 bg-white text-xs text-blue-700 hover:bg-blue-50"
+                                    onClick={() => {
+                                      setEditingInvoiceId(null);
+                                      setInvoiceDraft((f) => ({
+                                        ...f,
+                                        invoice_number: "",
+                                        status: "DRAFT",
+                                      }));
+                                    }}
+                                  >
+                                    <XIcon className="h-3 w-3" /> New
+                                  </Button>
+                                </div>
                               </div>
                             </div>
                           ) : (
