@@ -36,3 +36,6 @@ Thumbs.db
 # Local settings
 settings.json
 settings.local.json
+
+# Large local/prototype assets (GitHub file size limit)
+Asset-Manager.zip
