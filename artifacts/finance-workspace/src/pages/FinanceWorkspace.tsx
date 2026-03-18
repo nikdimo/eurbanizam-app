@@ -160,10 +160,24 @@ export default function FinanceWorkspace() {
 
   const handleSaveInvoice = () => {
     if (!invoiceForm.invoice_number || !invoiceForm.amount) { toast({ title: "Error", description: "Invoice number and amount are required", variant: "destructive" }); return; }
-    const newInvoice = { invoice_id: Date.now(), invoice_number: invoiceForm.invoice_number, status: invoiceForm.status, issue_date: invoiceForm.issue_date, due_date: invoiceForm.due_date, amount: parseFloat(invoiceForm.amount), currency: invoiceForm.currency, client_name: invoiceForm.client_name, client_email: invoiceForm.client_email, client_address: invoiceForm.client_address, service_description: invoiceForm.service_description, reminders_enabled: invoiceForm.reminders_enabled, reminder_first_after_days: invoiceForm.reminder_first_after_days, reminder_repeat_days: invoiceForm.reminder_repeat_days, reminder_max_count: invoiceForm.reminder_max_count, reminder_sent_count: 0 };
-    setData(prev => ({ ...prev, invoices: [...prev.invoices, newInvoice] }));
-    toast({ title: "Invoice saved", description: `Invoice ${invoiceForm.invoice_number} created.` });
-    setActiveInvoiceId(newInvoice.invoice_id);
+    if (activeInvoiceId !== null) {
+      // Update existing invoice in place
+      setData(prev => ({
+        ...prev,
+        invoices: prev.invoices.map(inv =>
+          inv.invoice_id === activeInvoiceId
+            ? { ...inv, invoice_number: invoiceForm.invoice_number, status: invoiceForm.status, issue_date: invoiceForm.issue_date, due_date: invoiceForm.due_date, amount: parseFloat(invoiceForm.amount), currency: invoiceForm.currency, client_name: invoiceForm.client_name, client_email: invoiceForm.client_email, client_address: invoiceForm.client_address, service_description: invoiceForm.service_description, reminders_enabled: invoiceForm.reminders_enabled, reminder_first_after_days: invoiceForm.reminder_first_after_days, reminder_repeat_days: invoiceForm.reminder_repeat_days, reminder_max_count: invoiceForm.reminder_max_count }
+            : inv
+        ),
+      }));
+      toast({ title: "Invoice updated", description: `Invoice ${invoiceForm.invoice_number} saved.` });
+    } else {
+      // Create new invoice
+      const newInvoice = { invoice_id: Date.now(), invoice_number: invoiceForm.invoice_number, status: invoiceForm.status, issue_date: invoiceForm.issue_date, due_date: invoiceForm.due_date, amount: parseFloat(invoiceForm.amount), currency: invoiceForm.currency, client_name: invoiceForm.client_name, client_email: invoiceForm.client_email, client_address: invoiceForm.client_address, service_description: invoiceForm.service_description, reminders_enabled: invoiceForm.reminders_enabled, reminder_first_after_days: invoiceForm.reminder_first_after_days, reminder_repeat_days: invoiceForm.reminder_repeat_days, reminder_max_count: invoiceForm.reminder_max_count, reminder_sent_count: 0 };
+      setData(prev => ({ ...prev, invoices: [...prev.invoices, newInvoice] }));
+      toast({ title: "Invoice created", description: `Invoice ${invoiceForm.invoice_number} created.` });
+      setActiveInvoiceId(newInvoice.invoice_id);
+    }
   };
 
   const handleSendEmail = (isDryRun: boolean = false) => {
@@ -486,9 +500,9 @@ export default function FinanceWorkspace() {
                         <div className="space-y-2.5">
                           <div className="flex items-center justify-between">
                             <Label className="cursor-pointer" htmlFor="reminders-toggle">Auto Reminders</Label>
-                            <input id="reminders-toggle" type="checkbox" checked={invoiceForm.reminders_enabled} onChange={e => setInvoiceForm({ ...invoiceForm, reminders_enabled: e.target.checked })} className="h-4 w-4 rounded border-gray-300 text-primary" />
+                            <input id="reminders-toggle" type="checkbox" checked={invoiceForm.reminders_enabled === 1} onChange={e => setInvoiceForm({ ...invoiceForm, reminders_enabled: e.target.checked ? 1 : 0 })} className="h-4 w-4 rounded border-gray-300 text-primary" />
                           </div>
-                          {invoiceForm.reminders_enabled && (
+                          {invoiceForm.reminders_enabled === 1 && (
                             <div className="grid grid-cols-3 gap-2">
                               <div className="space-y-1">
                                 <Label className="text-xs text-muted-foreground">First after (d)</Label>
@@ -508,11 +522,11 @@ export default function FinanceWorkspace() {
                       </CardContent>
                       <CardFooter className="flex-col gap-2 border-t px-5 pt-4 pb-5">
                         <div className="flex w-full gap-2">
-                          <Button variant="outline" className="flex-1" onClick={() => setInvoiceForm({ ...invoiceForm, number: `INV-${Date.now().toString().slice(-4)}` })}>
+                          <Button variant="outline" className="flex-1" onClick={() => { setActiveInvoiceId(null); setInvoiceForm(f => ({ ...f, invoice_number: `INV-${Date.now().toString().slice(-4)}`, status: "DRAFT" })); }}>
                             <Copy className="mr-1.5 h-3.5 w-3.5" /> Copy to New
                           </Button>
                           <Button className="flex-1" onClick={handleSaveInvoice}>
-                            <Save className="mr-1.5 h-3.5 w-3.5" /> Save Invoice
+                            <Save className="mr-1.5 h-3.5 w-3.5" /> {activeInvoiceId !== null ? "Update Invoice" : "Create Invoice"}
                           </Button>
                         </div>
                         <div className="flex w-full gap-2">
